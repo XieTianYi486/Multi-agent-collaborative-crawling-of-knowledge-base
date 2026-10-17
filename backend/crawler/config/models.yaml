@@ -1,0 +1,35 @@
+# LLM 任务 → 模型档位映射（data-driven，换模型只改这里）。
+# 未来接入上海合作方模型：新增 provider 条目 + 修改 task 的 provider 字段即可。
+#
+# 价格（元/百万 token）仅用于成本估算，实际请以阿里云定价页为准。
+# 注意：qwen3.x 新系列默认开启思考模式（思考 token 额外计费），统一显式关闭。
+
+providers:
+  dashscope:
+    type: dashscope
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+tasks:
+  tagger:        # 每日新文档分类打标（批量、量最大 → 最便宜档）
+    provider: dashscope
+    model: qwen-flash
+    batch: true
+    price_in: 0.36
+    price_out: 1.9
+    disable_thinking: true
+
+  reviewer:      # 内容审核（拦截广告/垃圾/版权高风险，质量优先）
+    provider: dashscope
+    model: qwen-plus
+    batch: false
+    price_in: 0.8
+    price_out: 2.0
+    disable_thinking: true
+
+  summarizer:    # 文档一句话摘要（批量）
+    provider: dashscope
+    model: qwen-flash
+    batch: true
+    price_in: 0.36
+    price_out: 1.9
+    disable_thinking: true

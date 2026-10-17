@@ -1,0 +1,151 @@
+# 站点档案：采集层的数据驱动核心。
+# 新增站点 = 加一条配置；只有新采集方式才需要写新适配器。
+#
+# 字段说明：
+#   code              唯一标识
+#   source_type       rss / api / html
+#   adapter           crawl/adapters/ 中的适配器名
+#   risk_level        low=全文入库 / medium=仅节选+链接 / high=不入库仅留痕
+#   authority_weight  来源权威度
+#   license_note      授权依据（写入 source_authorizations 版权留痕）
+#   config            适配器私有参数
+#
+# 版权原则：仅校内教学使用，不对外分发；中高风险源只存节选与原文链接。
+
+sites:
+  # ---------- ESP32 生态（用户指定） ----------
+  - code: esp32_forum_idf
+    name: esp32.com 论坛（ESP-IDF 版块）
+    source_type: rss
+    adapter: rss_feed
+    risk_level: medium
+    authority_weight: 1.0
+    rate_limit: 10
+    license_note: phpBB 官方 Atom feed；论坛帖仅存节选与原文链接，仅校内教学使用
+    config:
+      feed_url: https://esp32.com/app.php/feed/forum/24
+
+  - code: espressif_docs_esp32
+    name: ESP-IDF 编程指南（ESP32 中文文档）
+    source_type: html
+    adapter: html_list
+    risk_level: low
+    authority_weight: 1.4
+    rate_limit: 2
+    license_note: 乐鑫官方文档（Apache-2.0）；公开文档全文入库，仅校内教学使用
+    config:
+      list_url: https://docs.espressif.com/projects/esp-idf/zh_CN/latest/esp32/index.html
+      link_selector: "a.reference.internal"
+      mode: tree
+      max_items: 60
+      exclude:
+        - "genindex"
+        - "py-modindex"
+        - "search.html"
+        - "/en/latest"
+
+  - code: espressif_doc_portal
+    name: 乐鑫文档门户（documentation.espressif.com 文档树）
+    source_type: html
+    adapter: espressif_docs
+    risk_level: low
+    authority_weight: 1.4
+    rate_limit: 2
+    license_note: 乐鑫官方文档（Apache-2.0）；公开文档全文入库，仅校内教学使用
+    config:
+      list_url: https://documentation.espressif.com/zh/documentList?eol=false
+      max_items: 40
+      # Vue SPA：页面内嵌链接取不到时，逐个探活这些候选 JSON API（全部失败则该站跳过）
+      api_candidates:
+        - https://documentation.espressif.com/zh/api/documentList?eol=false
+        - https://documentation.espressif.com/api/documentList?eol=false
+
+  - code: espressif_cn_news
+    name: 乐鑫官方新闻
+    source_type: html
+    adapter: html_list
+    risk_level: low
+    authority_weight: 1.3
+    rate_limit: 5
+    license_note: 乐鑫官方新闻；公开内容全文入库，仅校内教学使用
+    config:
+      list_url: https://www.espressif.com.cn/zh-hans/company/newsroom/news
+      link_selector: 'a[href*="/zh-hans/news/"]'
+      max_items: 20
+      exclude:
+        - "news?keys"
+      # .cn WAF 拦截爬虫 UA；官方公开新闻页面，站点级 UA 覆盖（仅此用途）
+      user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+
+  - code: espressif_cn_home
+    name: 乐鑫中文官网首页
+    source_type: html
+    adapter: html_list
+    risk_level: low
+    authority_weight: 1.2
+    rate_limit: 5
+    license_note: 乐鑫官网公开内容；全文入库，仅校内教学使用
+    config:
+      list_url: https://www.espressif.com.cn/zh-hans/home
+      link_selector: 'a[href*="/zh-hans/"]'
+      max_items: 10
+      exclude:
+        - "company"
+        - "legal"
+        - "terms"
+      user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+
+  - code: espressif_cn_sitemap
+    name: 乐鑫中文官网（sitemap 整站）
+    source_type: html
+    adapter: sitemap
+    risk_level: low
+    authority_weight: 1.2
+    rate_limit: 3
+    license_note: 乐鑫官网公开内容；全文入库，仅校内教学使用
+    config:
+      sitemap_url: https://www.espressif.com.cn/sitemap.xml
+      path_prefix: /zh-hans/
+      max_items: 20
+      user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+
+  - code: github_espressif_esp_idf
+    name: GitHub 仓库 espressif/esp-idf
+    source_type: api
+    adapter: github
+    risk_level: low
+    authority_weight: 1.3
+    rate_limit: 2
+    license_note: GitHub 官方 API；仓库元数据与 release notes 公开（Apache-2.0），仅校内教学使用
+    config:
+      mode: repo
+      owner: espressif
+      repo: esp-idf
+      releases: 5
+
+  # ---------- 论坛（用户指定） ----------
+  - code: elecfans_wireless
+    name: 电子发烧友论坛（无线通信版块）
+    source_type: html
+    adapter: html_list
+    risk_level: medium
+    authority_weight: 0.7
+    rate_limit: 8
+    license_note: 论坛用户内容；仅存节选与原文链接，仅校内教学使用
+    config:
+      list_url: https://bbs.elecfans.com/forum.php?mod=forumdisplay&fid=6
+      link_selector: "a.s.xst"
+      max_items: 15
+      exclude:
+        - "archiver"
+
+  # ---------- 教学领域补充（低风险官方源） ----------
+  - code: raspberrypi_blog
+    name: 树莓派官方博客
+    source_type: rss
+    adapter: rss_feed
+    risk_level: low
+    authority_weight: 1.3
+    license_note: 官方公开 RSS；官方博客内容，全文入库仅校内教学使用
+    config:
+      feed_url: https://www.raspberrypi.com/news/feed/
