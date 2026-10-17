@@ -235,6 +235,31 @@ register_crawl_task.bat                      # 注册 Windows 任务计划（每
 
 ---
 
+## 📦 随仓库附带的知识库数据（clone 后必读）
+
+仓库已附带**知识库种子数据**，clone 后无需从零爬取即可使用：
+
+| 数据 | 位置 | 内容 |
+|------|------|------|
+| KB 主库 | `backend/data/enterprise_rag.db` | 6762 篇文档 / 23278 个分块 / 分类树 / 演示账号 |
+| 爬虫库 | `backend/crawler/data/db/crawler.db` | 站点配置 / 采集与同步记录（爬取中心页面展示） |
+
+**⚠️ 向量索引未随仓库分发**（`backend/chroma_data` 约 474MB，超出 GitHub 单文件 100MB 限制）。clone 后必须二选一恢复索引，否则问答检索无结果：
+
+1. **重建索引（需自行配置 API Key）**：
+   ```bash
+   cd backend
+   python rebuild_indexes.py     # 重新嵌入全部 23278 个分块（约 ¥10-15，需十几分钟）
+   # 完成后重启后端服务
+   ```
+2. **使用现成索引备份**（推荐）：向项目管理员索取 `chroma_data_完整索引.zip`，解压覆盖 `backend/chroma_data/` 目录即可，零成本。
+
+**其他说明**：
+- `backend/uploads/` 原文件未随仓库分发——个别本地上传文档的"原文下载"功能不可用，**不影响问答检索**（爬虫文档均自带原文链接）
+- `.env`（API Key）属机密不随仓库分发，请自行配置或向管理员索取
+
+---
+
 ## 🕷️ 多智能体爬取子系统（backend/crawler/）
 
 面向 ESP32/树莓派/嵌入式开发教学资料的自动采集入库（**仅校内教学使用**），与 FastAPI 主应用完全解耦的独立批处理包。
