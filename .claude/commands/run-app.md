@@ -1,26 +1,26 @@
 ---
-description: 启动劳动用工合规智能问答系统（前后端同时启动）
+description: 启动人工智能学院教学知识库（前后端同时启动）
 ---
 
-请启动劳动用工合规智能问答系统。本系统包含前端（Vue 3 + Vite）和后端（Python FastAPI），需要分别启动：
+请启动人工智能学院教学知识库。本系统包含前端（Vue 3 + Vite）和后端（Python FastAPI），需要分别启动：
 
 ## 启动方式
 
 ### 方式一：一键启动（推荐）
 ```bash
-cmd.exe /c "E:\Claude_Project\Enterprise Employee Self-Service Intelligent Knowledge Base\start_all.bat"
+cmd.exe /c "E:\Claude_Project_second\Multi-agent collaborative crawling of knowledge base\start_all.bat"
 ```
 
 ### 方式二：分别启动
 
 **后端：**
 ```bash
-cd "E:\Claude_Project\Enterprise Employee Self-Service Intelligent Knowledge Base\backend" && python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+cd "E:\Claude_Project_second\Multi-agent collaborative crawling of knowledge base\backend" && python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 **前端：**
 ```bash
-cd "E:\Claude_Project\Enterprise Employee Self-Service Intelligent Knowledge Base\frontend" && npm run dev
+cd "E:\Claude_Project_second\Multi-agent collaborative crawling of knowledge base\frontend" && npm run dev
 ```
 
 ## 启动后访问

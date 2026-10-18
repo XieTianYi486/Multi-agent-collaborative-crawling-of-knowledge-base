@@ -12,6 +12,8 @@ export interface UserInfo {
   position: string | null
   avatar_url: string | null
   department: string | null
+  gender: string | null
+  entry_date: string | null
   role_id: number
   role_name: string | null
   status: number

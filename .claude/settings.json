@@ -16,16 +16,16 @@
       "Bash(git push *)",
       "Bash(rm -f .claude/check-results/*.json)",
       "Bash(mkdir -p *)",
-      "Read(//e/Claude_Project_second/Enterprise Employee Self-Service Intelligent Knowledge Base/**)",
-      "Write(//e/Claude_Project_second/Enterprise Employee Self-Service Intelligent Knowledge Base/**)",
-      "Edit(//e/Claude_Project_second/Enterprise Employee Self-Service Intelligent Knowledge Base/**)",
-      "Glob(//e/Claude_Project_second/Enterprise Employee Self-Service Intelligent Knowledge Base/**)",
-      "Grep(//e/Claude_Project_second/Enterprise Employee Self-Service Intelligent Knowledge Base/**)"
+      "Read(//e/Claude_Project_second/Multi-agent collaborative crawling of knowledge base/**)",
+      "Write(//e/Claude_Project_second/Multi-agent collaborative crawling of knowledge base/**)",
+      "Edit(//e/Claude_Project_second/Multi-agent collaborative crawling of knowledge base/**)",
+      "Glob(//e/Claude_Project_second/Multi-agent collaborative crawling of knowledge base/**)",
+      "Grep(//e/Claude_Project_second/Multi-agent collaborative crawling of knowledge base/**)"
     ],
     "additionalDirectories": [
-      "e:\\Claude_Project_second\\Enterprise Employee Self-Service Intelligent Knowledge Base\\frontend\\src",
-      "e:\\Claude_Project_second\\Enterprise Employee Self-Service Intelligent Knowledge Base\\backend\\app",
-      "e:\\Claude_Project_second\\Enterprise Employee Self-Service Intelligent Knowledge Base\\backend\\crawler"
+      "e:\\Claude_Project_second\\Multi-agent collaborative crawling of knowledge base\\frontend\\src",
+      "e:\\Claude_Project_second\\Multi-agent collaborative crawling of knowledge base\\backend\\app",
+      "e:\\Claude_Project_second\\Multi-agent collaborative crawling of knowledge base\\backend\\crawler"
     ]
   }
 }

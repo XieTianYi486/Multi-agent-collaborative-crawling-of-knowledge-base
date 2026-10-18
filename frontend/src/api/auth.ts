@@ -9,7 +9,7 @@ export const authApi = {
   getMe: () => client.get('/auth/me'),
   changePassword: (data: { old_password: string; new_password: string }) =>
     client.post('/auth/change-password', data),
-  updateProfile: (data: { real_name?: string; email?: string; phone?: string; position?: string; department?: string }) =>
+  updateProfile: (data: { real_name?: string; email?: string; phone?: string; position?: string; gender?: string; entry_date?: string }) =>
     client.put('/auth/profile', data),
   uploadAvatar: (file: File) => {
     const formData = new FormData()

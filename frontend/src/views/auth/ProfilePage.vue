@@ -20,6 +20,21 @@
         </div>
         <input ref="fileInputRef" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden @change="handleAvatarChange" />
 
+        <!-- 预设头像：点击即设为本人头像 -->
+        <div class="preset-title">预设头像</div>
+        <div class="preset-list">
+          <div
+            v-for="p in PRESET_AVATARS"
+            :key="p.src"
+            class="preset-item"
+            :title="`使用${p.name}`"
+            @click="applyPresetAvatar(p.src)"
+          >
+            <img :src="p.src" :alt="p.name" />
+            <el-icon v-if="presetLoading === p.src" class="preset-loading is-loading"><Loading /></el-icon>
+          </div>
+        </div>
+
         <div class="profile-name">{{ authStore.user?.real_name || authStore.user?.username }}</div>
         <el-tag effect="plain" size="small">{{ authStore.user?.role_name || '-' }}</el-tag>
 
@@ -60,8 +75,23 @@
               <el-form-item label="职位" prop="position">
                 <el-input v-model="form.position" placeholder="例如：开发工程师" clearable />
               </el-form-item>
-              <el-form-item label="部门" prop="department">
-                <el-input v-model="form.department" placeholder="所属部门" clearable />
+              <el-form-item label="部门">
+                <el-input :model-value="authStore.user?.department || '未分配'" disabled placeholder="部门由管理员分配" />
+              </el-form-item>
+              <el-form-item label="性别" prop="gender">
+                <el-select v-model="form.gender" placeholder="选择性别" clearable style="width: 100%">
+                  <el-option label="男" value="男" />
+                  <el-option label="女" value="女" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="入职日期" prop="entry_date">
+                <el-date-picker
+                  v-model="form.entry_date"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="选择入职日期"
+                  style="width: 100%"
+                />
               </el-form-item>
               <el-form-item>
                 <el-button type="primary" :loading="saving" @click="handleSave">保存修改</el-button>
@@ -96,15 +126,28 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import {
-  UserFilled, Camera, User, Briefcase, OfficeBuilding, Clock,
+  UserFilled, Camera, User, Briefcase, OfficeBuilding, Clock, Loading,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/store/auth'
 import { authApi } from '@/api/auth'
+// 预设头像（沿用参考项目个人中心的演示头像）
+import avatar1 from '@/assets/avatars/avatar-1.jpg'
+import avatar2 from '@/assets/avatars/avatar-2.jpg'
+import avatar3 from '@/assets/avatars/avatar-3.jpg'
+import avatar4 from '@/assets/avatars/avatar-4.jpg'
+
+const PRESET_AVATARS = [
+  { name: '头像 1', src: avatar1 },
+  { name: '头像 2', src: avatar2 },
+  { name: '头像 3', src: avatar3 },
+  { name: '头像 4', src: avatar4 },
+]
 
 const authStore = useAuthStore()
 const fileInputRef = ref<HTMLInputElement>()
 const saving = ref(false)
 const avatarPreview = ref<string | null>(null)
+const presetLoading = ref<string | null>(null)
 const activeTab = ref('profile')
 const profileFormRef = ref<FormInstance>()
 const pwdFormRef = ref<FormInstance>()
@@ -114,7 +157,8 @@ const form = reactive({
   email: '',
   phone: '',
   position: '',
-  department: '',
+  gender: '',
+  entry_date: '',
 })
 
 const passwordForm = reactive({
@@ -162,7 +206,8 @@ function initForm() {
   form.email = u.email || ''
   form.phone = u.phone || ''
   form.position = u.position || ''
-  form.department = u.department || ''
+  form.gender = u.gender || ''
+  form.entry_date = u.entry_date ? String(u.entry_date).slice(0, 10) : ''
   avatarPreview.value = u.avatar_url ? u.avatar_url : null
 }
 
@@ -193,6 +238,29 @@ async function handleAvatarChange(e: Event) {
   }
 }
 
+/** 应用预设头像：本地打包图片转 File 后走统一上传接口，保证服务端落库 */
+async function applyPresetAvatar(src: string) {
+  if (presetLoading.value) return
+  presetLoading.value = src
+  try {
+    const resp = await fetch(src)
+    const blob = await resp.blob()
+    const ext = src.split('.').pop() || 'png'
+    const file = new File([blob], `preset-avatar.${ext}`, { type: blob.type })
+    const res = await authApi.uploadAvatar(file)
+    const url = res.data.data.avatar_url
+    avatarPreview.value = url
+    if (authStore.user) {
+      authStore.user.avatar_url = url
+    }
+    ElMessage.success('头像已更新')
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.message || '头像设置失败')
+  } finally {
+    presetLoading.value = null
+  }
+}
+
 async function handleSave() {
   const valid = await profileFormRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -203,7 +271,8 @@ async function handleSave() {
       email: form.email || undefined,
       phone: form.phone || undefined,
       position: form.position || undefined,
-      department: form.department || undefined,
+      gender: form.gender || undefined,
+      entry_date: form.entry_date || undefined,
     })
     if (authStore.user) {
       Object.assign(authStore.user, res.data.data)
@@ -274,6 +343,49 @@ async function handleChangePassword() {
   gap: 4px; font-size: 12px; opacity: 0; transition: opacity .2s;
 }
 .avatar-upload:hover .avatar-overlay { opacity: 1; }
+
+/* 预设头像 */
+.preset-title {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  align-self: flex-start;
+}
+.preset-list {
+  margin-top: 8px;
+  display: flex;
+  gap: 10px;
+  align-self: flex-start;
+}
+.preset-item {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+  border: 2px solid transparent;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.preset-item:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+}
+.preset-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.preset-loading {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .profile-name { margin: 14px 0 6px; font-size: 17px; font-weight: 600; color: var(--color-text-primary); }
 .profile-meta { margin-top: 20px; width: 100%; border-top: 1px solid var(--color-border); padding-top: 16px; display: flex; flex-direction: column; gap: 10px; }

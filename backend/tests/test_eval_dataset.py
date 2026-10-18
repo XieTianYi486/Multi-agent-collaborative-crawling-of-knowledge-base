@@ -13,8 +13,8 @@ EVAL_DIR = Path(__file__).resolve().parent.parent / "eval"
 DATASET_PATH = EVAL_DIR / "qa_dataset.json"
 
 VALID_CATEGORIES = {
-    "工时休假", "工资社保", "劳动合同", "解雇保护", "工伤",
-    "争议处理", "企业制度", "案例咨询", "拒答无关", "多轮指代",
+    "ESP32硬件", "ESP-IDF开发", "树莓派", "无线通信", "物联网云平台",
+    "电子电路", "AI边缘应用", "AI技术前沿", "拒答无关", "多轮指代",
 }
 
 # 法规引用（含条号）或制度/案例引用（仅文档名，如《考勤与加班管理制度》）

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.exceptions import LLMException, RetrievalException
 from app.models.chat import ChatSession, ChatMessage, ChatLog
-from app.models.document import Document
+from app.models.document import Category, Document
 from app.rag.retrievers.hybrid_retriever import get_hybrid_retriever
 from app.rag.llm.dashscope_llm import get_llm
 from app.rag.reranker.llm_reranker import get_reranker
@@ -50,9 +50,26 @@ class ChatService:
     # ==================== 问答缓存 ====================
 
     @staticmethod
-    def _get_cached_answer(question: str, security_level: int) -> Optional[Dict]:
+    def _scope_signature(
+        category_ids: Optional[List[int]] = None,
+        document_ids: Optional[List[int]] = None,
+    ) -> str:
+        """
+        生成检索范围的稳定签名。
+
+        缓存键必须区分检索范围，否则「限定分类 A」的结果会被
+        「不限范围」或「限定分类 B」的相同问题复用，导致答案串味。
+        """
+        c = ",".join(str(x) for x in sorted(category_ids)) if category_ids else ""
+        d = ",".join(str(x) for x in sorted(document_ids)) if document_ids else ""
+        return f"c[{c}]d[{d}]"
+
+    @staticmethod
+    def _get_cached_answer(
+        question: str, security_level: int, scope_sig: str = ""
+    ) -> Optional[Dict]:
         """读取单轮问答缓存（命中返回 {answer, sources}，未命中返回 None）"""
-        key = cache.make_key(question, security_level, prefix="qa")
+        key = cache.make_key(question, security_level, scope_sig, prefix="qa")
         cached = cache.get_from_memory(key)
         if cached is None:
             cached = cache.get_from_disk(key)
@@ -60,10 +77,11 @@ class ChatService:
 
     @staticmethod
     def _store_cached_answer(
-        question: str, security_level: int, answer: str, sources: list
+        question: str, security_level: int, answer: str, sources: list,
+        scope_sig: str = "",
     ) -> None:
         """写入单轮问答缓存（内存 + 磁盘，TTL 取配置 CACHE_TTL_ANSWER）"""
-        key = cache.make_key(question, security_level, prefix="qa")
+        key = cache.make_key(question, security_level, scope_sig, prefix="qa")
         payload = {"answer": answer, "sources": sources}
         cache.set_to_memory(key, payload)
         cache.set_to_disk(key, payload, ttl=settings.CACHE_TTL_ANSWER)
@@ -75,6 +93,7 @@ class ChatService:
         question: str,
         security_level: int = 1,
         category_ids: Optional[List[int]] = None,
+        document_ids: Optional[List[int]] = None,
         chat_history: Optional[List[Dict]] = None,
     ) -> Dict:
         """
@@ -85,6 +104,7 @@ class ChatService:
         }
         """
         t_start = time.time()
+        scope_sig = self._scope_signature(category_ids, document_ids)
 
         # === 第0步：意图识别 ===
         intent = detect_intent(question)
@@ -96,7 +116,7 @@ class ChatService:
         # === 第0.25步：问答缓存（仅单轮对话；多轮历史影响答案，不缓存）===
         cache_key = None
         if not chat_history:
-            cached = self._get_cached_answer(question, security_level)
+            cached = self._get_cached_answer(question, security_level, scope_sig)
             if cached:
                 return {
                     "answer": cached["answer"],
@@ -108,7 +128,7 @@ class ChatService:
                         "cache_hit": True,
                     },
                 }
-            cache_key = cache.make_key(question, security_level, prefix="qa")
+            cache_key = cache.make_key(question, security_level, scope_sig, prefix="qa")
 
         # === 第0.5步：查询改写 ===
         query_rewriter = get_query_rewriter()
@@ -135,7 +155,7 @@ class ChatService:
         t_retrieval = (time.time() - t_retrieval_start) * 1000
 
         # === 第1.5步：发布/密级二次过滤（仅允许已通过审核且密级内的文档）===
-        visible_ids = self._visible_doc_ids(security_level)
+        visible_ids = self._visible_doc_ids(security_level, category_ids, document_ids)
         candidates = [c for c in candidates if c.get("document_id") in visible_ids]
 
         # === 第2步：拒答兜底（无任何检索结果时才短路，其余交给重排+LLM 判断）===
@@ -195,7 +215,7 @@ class ChatService:
         # 写入单轮问答缓存（供后续相同问题直接命中）
         if cache_key:
             self._store_cached_answer(
-                question, security_level, result["content"], sources
+                question, security_level, result["content"], sources, scope_sig
             )
 
         return {
@@ -216,6 +236,8 @@ class ChatService:
         self,
         question: str,
         security_level: int = 1,
+        category_ids: Optional[List[int]] = None,
+        document_ids: Optional[List[int]] = None,
         chat_history: Optional[List[Dict]] = None,
     ) -> AsyncGenerator[Dict, None]:
         """
@@ -228,6 +250,7 @@ class ChatService:
             {"type": "error", "data": str}
         """
         t_start = time.time()
+        scope_sig = self._scope_signature(category_ids, document_ids)
 
         # === 第0步：意图识别 ===
         intent = detect_intent(question)
@@ -253,7 +276,7 @@ class ChatService:
         # === 第0.25步：问答缓存（仅单轮对话；多轮历史影响答案，不缓存）===
         cache_key = None
         if not chat_history:
-            cached = self._get_cached_answer(question, security_level)
+            cached = self._get_cached_answer(question, security_level, scope_sig)
             if cached:
                 yield {"type": "token", "data": cached["answer"]}
                 yield {"type": "sources", "data": cached.get("sources", [])}
@@ -267,7 +290,7 @@ class ChatService:
                     },
                 }}
                 return
-            cache_key = cache.make_key(question, security_level, prefix="qa")
+            cache_key = cache.make_key(question, security_level, scope_sig, prefix="qa")
 
         # === 第0.5步：查询改写 ===
         query_rewriter = get_query_rewriter()
@@ -292,7 +315,7 @@ class ChatService:
         t_retrieval = (time.time() - t_retrieval_start) * 1000
 
         # === 第1.5步：发布/密级二次过滤 ===
-        visible_ids = self._visible_doc_ids(security_level)
+        visible_ids = self._visible_doc_ids(security_level, category_ids, document_ids)
         candidates = [c for c in candidates if c.get("document_id") in visible_ids]
 
         # === 第2步：拒答兜底（无任何检索结果时才短路）===
@@ -350,7 +373,7 @@ class ChatService:
 
         # 写入单轮问答缓存（供后续相同问题直接命中）
         if cache_key:
-            self._store_cached_answer(question, security_level, full_answer, sources)
+            self._store_cached_answer(question, security_level, full_answer, sources, scope_sig)
 
         # === 发送来源 ===
         yield {"type": "sources", "data": sources}
@@ -377,6 +400,8 @@ class ChatService:
         query: str,
         security_level: int = 1,
         top_k: int = 10,
+        category_ids: Optional[List[int]] = None,
+        document_ids: Optional[List[int]] = None,
     ) -> List[Dict]:
         """
         混合检索并返回经发布/密级过滤的知识片段，不调用 LLM。
@@ -387,6 +412,8 @@ class ChatService:
             query: 检索语句
             security_level: 可访问密级上限
             top_k: 返回片段数
+            category_ids: 限定分类范围（可选，含所选分类的子孙分类）
+            document_ids: 限定文档范围（可选）
 
         返回:
             按融合分数降序的片段列表
@@ -394,13 +421,40 @@ class ChatService:
         chunks = self.hybrid.search(
             query=query, top_k=top_k, security_level=security_level,
         )
-        visible = self._visible_doc_ids(security_level)
+        visible = self._visible_doc_ids(security_level, category_ids, document_ids)
         return [c for c in chunks if c.get("document_id") in visible]
 
     # ==================== 辅助方法 ====================
 
     @staticmethod
-    def _visible_doc_ids(security_level: int) -> set:
+    def _expand_category_ids(db: Session, category_ids: List[int]) -> set:
+        """
+        将所选分类展开为「自身 + 所有子孙分类」的 ID 集合。
+
+        分类树通过 Category.parent_id 自引用，采用逐层 BFS 展开，
+        不依赖 SQLite 递归 CTE（低版本不支持），保证与分类树展示一致。
+        """
+        rows = db.query(Category.id, Category.parent_id).all()
+        children_map: Dict[int, List[int]] = {}
+        for cid, pid in rows:
+            children_map.setdefault(pid, []).append(cid)
+
+        expanded: set = set()
+        queue = list(category_ids)
+        while queue:
+            cid = queue.pop()
+            if cid in expanded:
+                continue
+            expanded.add(cid)
+            queue.extend(children_map.get(cid, []))
+        return expanded
+
+    @staticmethod
+    def _visible_doc_ids(
+        security_level: int,
+        category_ids: Optional[List[int]] = None,
+        document_ids: Optional[List[int]] = None,
+    ) -> set:
         """
         获取当前用户可检索的文档 ID 集合。
 
@@ -408,16 +462,25 @@ class ChatService:
         - 仅"已发布(status=1) + 已通过审核(review_status=2)"的文档可被检索
         - 且密级不得高于用户可访问的安全级别
 
+        可选叠加检索范围限定（问答/检索接口传入）：
+        - category_ids: 只保留所选分类及其子孙分类下的文档
+        - document_ids: 只保留指定文档
+
         用于对检索召回结果做二次过滤，防止未审核/越权内容被问答引用。
         """
         db = SessionLocal()
         try:
-            rows = db.query(Document.id).filter(
+            query = db.query(Document.id).filter(
                 Document.status == 1,
                 Document.review_status == 2,
                 Document.security_level <= security_level,
-            ).all()
-            return {r[0] for r in rows}
+            )
+            if category_ids:
+                scope_cats = ChatService._expand_category_ids(db, category_ids)
+                query = query.filter(Document.category_id.in_(scope_cats))
+            if document_ids:
+                query = query.filter(Document.id.in_(document_ids))
+            return {r[0] for r in query.all()}
         finally:
             db.close()
 

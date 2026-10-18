@@ -138,21 +138,33 @@ def update_profile(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """更新当前用户的个人信息（姓名/邮箱/手机/职位/部门）"""
+    """更新当前用户的个人信息（姓名/邮箱/手机/职位/性别/入职日期）"""
+    # get_current_user 返回的是 detached 对象，直接修改不会落库；
+    # 必须在当前 db 会话中重新查询后再更新（同 change_password 的处理方式）
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if user is None:
+        raise ValidationException("用户不存在")
+
     if request.real_name is not None:
-        current_user.real_name = request.real_name
+        user.real_name = request.real_name
     if request.email is not None:
-        current_user.email = request.email
+        user.email = request.email
     if request.phone is not None:
-        current_user.phone = request.phone
+        user.phone = request.phone
     if request.position is not None:
-        current_user.position = request.position
-    if request.department is not None:
-        current_user.department = request.department
+        user.position = request.position
+    if request.gender is not None:
+        user.gender = request.gender
+    if request.entry_date is not None:
+        from datetime import datetime as _dt
+        try:
+            user.entry_date = _dt.strptime(request.entry_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValidationException("入职日期格式应为 yyyy-MM-dd")
     db.flush()
     return APIResponse(
         code=0, message="更新成功",
-        data=AuthService.get_user_info(current_user)
+        data=AuthService.get_user_info(user)
     )
 
 
@@ -192,10 +204,15 @@ def upload_avatar(
     with open(filepath, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    current_user.avatar_url = f"/static/avatars/{filename}"
+    # current_user 为 detached 对象，须在当前会话重新查询后更新才能真正落库
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if user is None:
+        os.remove(filepath)  # 用户已不存在时清理刚写入的文件
+        raise ValidationException("用户不存在")
+    user.avatar_url = f"/static/avatars/{filename}"
     db.flush()
 
     return APIResponse(
         code=0, message="头像上传成功",
-        data={"avatar_url": current_user.avatar_url}
+        data={"avatar_url": user.avatar_url}
     )

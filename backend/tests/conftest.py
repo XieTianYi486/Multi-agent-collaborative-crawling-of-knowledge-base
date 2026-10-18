@@ -63,7 +63,7 @@ def db():
 
 @pytest.fixture()
 def roles(db):
-    """预置四个 RBAC 角色，返回 {code: Role}"""
+    """预置 RBAC 角色（含老师/学生），返回 {code: Role}"""
     from app.models.user import Role
 
     role_map = {r.code: r for r in db.query(Role).all()}
@@ -72,6 +72,8 @@ def roles(db):
         ("知识库管理员", "knowledge_admin"),
         ("部门管理员", "dept_admin"),
         ("普通员工", "employee"),
+        ("老师", "teacher"),
+        ("学生", "student"),
     ]
     for name, code in defaults:
         if code not in role_map:

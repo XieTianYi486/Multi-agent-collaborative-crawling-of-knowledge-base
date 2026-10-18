@@ -3,7 +3,7 @@
 # 完整 RBAC 权限模型（旧项目仅有二元 admin/user 区分）
 # ============================================================
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -80,6 +80,12 @@ class User(Base):
     )
     department: Mapped[Optional[str]] = mapped_column(
         String(128), nullable=True, comment="所属部门"
+    )
+    gender: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True, default="男", comment="性别（男/女）"
+    )
+    entry_date: Mapped[Optional[date]] = mapped_column(
+        Date, nullable=True, comment="入职日期"
     )
     role_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("roles.id"), nullable=False, default=1, comment="角色ID"

@@ -18,11 +18,11 @@ class TestRegister:
     """用户注册"""
 
     def test_register_success(self, db, roles):
-        request = RegisterRequest(username="new_employee", password="abc123456")
+        request = RegisterRequest(username="new_student", password="abc123456")
         user = AuthService.register(db, request)
         db.commit()
         assert user.id is not None
-        assert user.role_id == roles["employee"].id
+        assert user.role_id == roles["student"].id
 
     def test_register_duplicate_username(self, db, roles):
         AuthService.register(db, RegisterRequest(

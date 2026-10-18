@@ -53,6 +53,8 @@ class UserInfo(BaseModel):
     avatar_url: Optional[str] = None
     position: Optional[str] = None
     department: Optional[str] = None
+    gender: Optional[str] = None
+    entry_date: Optional[datetime] = None
     role_id: int
     role_name: Optional[str] = None  # 角色名称（JOIN 查询填充）
     status: int
@@ -70,9 +72,15 @@ class LoginResponse(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    """更新个人资料请求"""
+    """
+    更新个人资料请求
+
+    安全约束：不含 department——部门归属由管理员分配，
+    个人中心不允许自助修改，防止越权访问他部门知识库内容。
+    """
     real_name: Optional[str] = Field(default=None, max_length=64)
     email: Optional[str] = Field(default=None, max_length=128)
     phone: Optional[str] = Field(default=None, max_length=32)
     position: Optional[str] = Field(default=None, max_length=128)
-    department: Optional[str] = Field(default=None, max_length=128)
+    gender: Optional[str] = Field(default=None, description="性别（男/女）")
+    entry_date: Optional[str] = Field(default=None, description="入职日期 yyyy-MM-dd")

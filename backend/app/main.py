@@ -23,6 +23,7 @@ import app.models.chat      # noqa: F401
 import app.models.ticket    # noqa: F401
 import app.models.audit     # noqa: F401
 import app.models.api_client  # noqa: F401
+import app.models.counselor   # noqa: F401
 
 from app.models.user import Role, User
 from app.core.security import hash_password
@@ -111,6 +112,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 from app.api.v1 import (
     auth, documents, chat, admin, tickets, security, crawler, api_clients,
+    counselor,
 )
 
 app.include_router(auth.router, prefix="/api/v1")
@@ -123,6 +125,7 @@ app.include_router(tickets.admin_router, prefix="/api/v1")
 app.include_router(security.router, prefix="/api/v1")
 app.include_router(crawler.router, prefix="/api/v1")
 app.include_router(api_clients.router, prefix="/api/v1")
+app.include_router(counselor.router, prefix="/api/v1")
 
 # 对外开放 API（API Key 鉴权，命名空间与内部接口隔离）
 from app.api.open_api import v1 as open_v1

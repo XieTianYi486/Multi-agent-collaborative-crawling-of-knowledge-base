@@ -103,6 +103,12 @@ class Settings(BaseSettings):
     # ==================== 知识审核发布 ====================
     DOCUMENT_REVIEW_ENABLED: bool = True  # 是否启用"草稿->待审核->已发布"审核发布流
 
+    # ==================== AI 导员 ====================
+    COUNSELOR_ENABLED: bool = True        # 是否启用 AI 导员悬浮入口
+    COUNSELOR_TOP_K: int = 6              # 导员知识库检索返回的条款数量
+    COUNSELOR_MIN_SCORE: float = 0.3      # 导员知识库命中阈值（条款绝对余弦相似度，低于此值视为未命中，转人设兜底）
+    COUNSELOR_KB_DIR: str = str(BASE_DIR / "data" / "counselor_kb")  # 导员知识库原始文档目录
+
     # ==================== 日志配置 ====================
     LOG_LEVEL: str = "INFO"
     LOG_DIR: str = str(BASE_DIR / "logs")
@@ -117,7 +123,7 @@ class Settings(BaseSettings):
         # 确保必要的目录存在
         for dir_path in [self.UPLOAD_DIR, self.CHROMA_PERSIST_DIR,
                          self.CACHE_DIR, self.LOG_DIR,
-                         str(BASE_DIR / "data")]:
+                         str(BASE_DIR / "data"), self.COUNSELOR_KB_DIR]:
             os.makedirs(dir_path, exist_ok=True)
 
     model_config = dict(

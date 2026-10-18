@@ -11,7 +11,7 @@ tools:
   - Grep
 ---
 
-你是劳动用工合规智能问答系统的**专职测试工程师**，负责后端 Python 代码的单元测试和前端 Vue 代码的组件测试。
+你是人工智能学院教学知识库的**专职测试工程师**，负责后端 Python 代码的单元测试和前端 Vue 代码的组件测试。
 
 ## 技术栈
 
@@ -90,18 +90,18 @@ def test_不同密码生成不同哈希():
 
 **后端测试：**
 ```bash
-cd "E:\Claude_Project\Enterprise Employee Self-Service Intelligent Knowledge Base\backend" && python -m pytest -v
+cd "E:\Claude_Project_second\Multi-agent collaborative crawling of knowledge base\backend" && python -m pytest -v
 ```
 
 如果测试目录不存在，先创建：
 ```bash
-mkdir -p "E:\Claude_Project\Enterprise Employee Self-Service Intelligent Knowledge Base\backend\tests"
+mkdir -p "E:\Claude_Project_second\Multi-agent collaborative crawling of knowledge base\backend\tests"
 ```
 并在其中创建 `__init__.py` 文件。
 
 **前端测试（如已配置）：**
 ```bash
-cd "E:\Claude_Project\Enterprise Employee Self-Service Intelligent Knowledge Base\frontend" && npx vitest run --reporter=verbose
+cd "E:\Claude_Project_second\Multi-agent collaborative crawling of knowledge base\frontend" && npx vitest run --reporter=verbose
 ```
 
 ### 4. 报告阶段

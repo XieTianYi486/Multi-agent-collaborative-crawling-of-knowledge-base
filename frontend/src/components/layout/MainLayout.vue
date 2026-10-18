@@ -119,6 +119,9 @@
     <main class="main-content">
       <router-view />
     </main>
+
+    <!-- AI 导员悬浮入口 -->
+    <FloatingCounselor />
   </div>
 </template>
 
@@ -128,6 +131,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { reviewApi } from '@/api/security'
+import FloatingCounselor from '@/components/counselor/FloatingCounselor.vue'
 import {
   Expand, Fold, Sunny, Moon, Reading, SwitchButton,
   ChatDotRound, Document, User, List, DataAnalysis, UserFilled,

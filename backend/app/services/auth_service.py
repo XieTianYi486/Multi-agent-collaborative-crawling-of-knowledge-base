@@ -225,6 +225,8 @@ class AuthService:
             "avatar_url": user.avatar_url,
             "position": user.position,
             "department": user.department,
+            "gender": user.gender,
+            "entry_date": user.entry_date,
             "role_id": user.role_id,
             "role_name": role_name,
             "status": user.status,

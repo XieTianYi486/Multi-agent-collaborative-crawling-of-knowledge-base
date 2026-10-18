@@ -9,7 +9,7 @@ import json
 import logging
 import traceback as tb_module
 import uuid as uuid_lib
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -108,6 +108,8 @@ def ask_question(
     result = chat_service.ask(
         question=request.question,
         security_level=security_level,
+        category_ids=request.category_ids,
+        document_ids=request.document_ids,
         chat_history=chat_history,
     )
 
@@ -197,6 +199,8 @@ async def ask_stream(
     role_code: str = current_user.role.code if current_user.role else ""
     security_level = _get_security_level(role_code)
     question: str = request.question
+    category_ids: Optional[List[int]] = request.category_ids
+    document_ids: Optional[List[int]] = request.document_ids
 
     # ── 问题侧敏感词拦截：高危词直接拒答并审计留痕（以 SSE 协议返回）──
     if _check_question_sensitive(db, question, current_user):
@@ -256,6 +260,8 @@ async def ask_stream(
             async for event in chat_service.ask_stream(
                 question=question,
                 security_level=security_level,
+                category_ids=category_ids,
+                document_ids=document_ids,
                 chat_history=chat_history,
             ):
                 if event["type"] == "token":

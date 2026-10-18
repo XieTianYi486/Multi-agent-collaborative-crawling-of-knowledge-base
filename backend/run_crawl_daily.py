@@ -3,8 +3,7 @@
 #
 # 任务计划程序配置示例：
 #   程序：<backend>\.venv\Scripts\python.exe
-#   参数：E:\Claude_Project_second\Enterprise Employee Self-Service
-#         Intelligent Knowledge Base\backend\run_crawl_daily.py
+#   参数：E:\Claude_Project_second\Multi-agent collaborative crawling of knowledge base\backend\run_crawl_daily.py
 #   起始于：<backend>\（重要：app.* 依赖 .env 的 cwd 约定）
 #   建议时间：每天 08:30（避开整点；爬虫进程与 uvicorn 共用 ChromaDB，
 #             低峰运行避免写锁竞争）

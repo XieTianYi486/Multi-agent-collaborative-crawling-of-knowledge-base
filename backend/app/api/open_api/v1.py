@@ -35,6 +35,8 @@ def open_search(
         query=request.query,
         security_level=client.security_level,
         top_k=request.top_k,
+        category_ids=request.category_ids,
+        document_ids=request.document_ids,
     )
 
     results = [

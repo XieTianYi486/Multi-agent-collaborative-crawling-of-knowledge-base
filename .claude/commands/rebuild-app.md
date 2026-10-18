@@ -2,10 +2,10 @@
 description: 重新构建前端代码（Vue 3 + Vite）
 ---
 
-请重新构建劳动用工合规智能问答系统的前端代码：
+请重新构建人工智能学院教学知识库的前端代码：
 
 ```bash
-cd "E:\Claude_Project\Enterprise Employee Self-Service Intelligent Knowledge Base\frontend" && npm run build
+cd "E:\Claude_Project_second\Multi-agent collaborative crawling of knowledge base\frontend" && npm run build
 ```
 
 构建完成后，`frontend/dist/` 目录中的文件就是最新的打包结果。

@@ -103,7 +103,7 @@
 ## 项目目录结构
 
 ```
-Enterprise Employee Self-Service Intelligent Knowledge Base/
+Multi-agent collaborative crawling of knowledge base/
 ├── backend/
 │   ├── app/
 │   │   ├── api/              # API 路由层

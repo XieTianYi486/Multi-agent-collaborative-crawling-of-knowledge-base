@@ -101,6 +101,8 @@ def _migrate_add_columns(engine):
         migrations = [
             ("avatar_url", "TEXT"),
             ("position", "TEXT"),
+            ("gender", "TEXT DEFAULT '男'"),
+            ("entry_date", "DATE"),
             # 登录安全字段
             ("failed_attempts", "INTEGER DEFAULT 0"),
             ("locked_until", "DATETIME"),

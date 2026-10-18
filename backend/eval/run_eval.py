@@ -1,5 +1,5 @@
 # ============================================================
-# 劳动用工合规问答 - 评测脚本
+# 人工智能学院教学知识库 - 评测脚本
 #
 # 分级运行：
 #   L1 无 API Key：  python eval/run_eval.py --retrievers bm25
@@ -344,7 +344,7 @@ def run_e2e(items: list, security_level: int, sample_size: int = 0) -> dict:
 # ---------- 主流程 ----------
 
 def main():
-    parser = argparse.ArgumentParser(description="劳动用工合规问答评测")
+    parser = argparse.ArgumentParser(description="人工智能学院教学知识库评测")
     parser.add_argument("--retrievers", default="bm25",
                         help="检索配置：bm25 | all | 逗号分隔（dense,hybrid,hybrid_rerank,hybrid_rerank_rewrite）")
     parser.add_argument("--mode", default="retrieval", choices=["retrieval", "rerank", "e2e"],
@@ -357,7 +357,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("  劳动用工合规问答 - 评测")
+    print("  人工智能学院教学知识库 - 评测")
     print(f"  模式: {args.mode} | 密级: {args.security_level}")
     print(f"  API Key: {'已配置' if settings.DASHSCOPE_API_KEY else '未配置（仅 BM25 可用）'}")
     print("=" * 60)
