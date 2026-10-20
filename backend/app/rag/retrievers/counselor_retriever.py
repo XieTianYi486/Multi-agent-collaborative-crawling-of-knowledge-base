@@ -63,6 +63,7 @@ class CounselorRetriever:
                 "article_no": r.article_no or "",
                 "chapter": r.chapter or "",
                 "source_url": r.source_url or "",
+                "security_level": r.security_level or 1,
             })
             embeddings.append(list(r.embedding) if r.embedding else None)
 
@@ -71,9 +72,23 @@ class CounselorRetriever:
             # BM25 仅依赖 content 字段
             self._bm25.build_index(chunks)
 
-        # 仅当所有条款都有向量时才构建向量矩阵（否则退化为纯 BM25）
+        # 仅当所有条款都有向量且维度一致时才构建向量矩阵（否则退化为纯 BM25）
         if chunks and all(e is not None for e in embeddings):
-            matrix = np.array(embeddings, dtype=np.float32)
+            # 防御：取出现最多的维度，跳过维度异常的条款
+            from collections import Counter
+            dim_counts = Counter(len(e) for e in embeddings)
+            main_dim = dim_counts.most_common(1)[0][0]
+            valid_indices = [i for i, e in enumerate(embeddings) if len(e) == main_dim]
+            if len(valid_indices) == len(embeddings):
+                matrix = np.array(embeddings, dtype=np.float32)
+            else:
+                logger.warning(
+                    "导员知识库 embedding 维度不一致（%s），仅保留维度=%d 的 %d/%d 条",
+                    dict(dim_counts), main_dim, len(valid_indices), len(embeddings),
+                )
+                matrix = np.array([embeddings[i] for i in valid_indices], dtype=np.float32)
+                # chunks 也需要对应过滤
+                self._chunks = [chunks[i] for i in valid_indices]
             norms = np.linalg.norm(matrix, axis=1, keepdims=True)
             norms[norms == 0] = 1.0
             self._emb_matrix = matrix / norms
@@ -93,9 +108,16 @@ class CounselorRetriever:
 
     # ---------- 检索 ----------
 
-    def search(self, query: str, top_k: Optional[int] = None) -> List[Dict]:
+    def search(
+        self, query: str, top_k: Optional[int] = None,
+        security_level: Optional[int] = None,
+    ) -> List[Dict]:
         """
         混合检索导员知识库，返回按融合分降序的条款列表。
+
+        参数:
+            security_level: 密级过滤（只返回 security_level <= 此值的条款）
+                            None 表示不过滤（管理员场景）
 
         每个结果额外携带：
         - cosine: 绝对余弦相似度（无向量索引时为 None）
@@ -108,12 +130,15 @@ class CounselorRetriever:
             top_k = settings.COUNSELOR_TOP_K
 
         vector_hits = self._vector_search(query, top_k)
-        bm25_hits = self._bm25.search(query, top_k=top_k, security_level=None)
+        bm25_hits = self._bm25.search(query, top_k=top_k, security_level=security_level)
 
         merged: Dict[str, Dict] = {}
 
         # 向量路：记录绝对余弦
         for chunk, cos in vector_hits:
+            # 应用密级过滤
+            if security_level is not None and (chunk.get("security_level", 1) or 1) > security_level:
+                continue
             cid = chunk["chunk_id"]
             merged[cid] = {**chunk, "score": 0.0, "cosine": cos, "bm25_norm": 0.0}
 

@@ -3,8 +3,10 @@
 # 首选 ChromaDB，降级为 FAISS（兼容旧版 Python/SQLite）
 # ============================================================
 
+import json
 import os
 import pickle
+import sqlite3
 import threading
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
@@ -99,7 +101,14 @@ class ChromaVectorStore(BaseVectorStore):
 
 class FaissVectorStore(BaseVectorStore):
     """
-    FAISS 向量存储（兼容旧版 Python/SQLite）
+    FAISS 向量存储（低内存版，针对 2 核 2G 低配服务器）
+
+    设计要点：
+    1. 不再用 Python dict 冗余保存向量（原 _idx_to_emb 占 ~1GB），
+       需要向量时用 faiss 的 reconstruct(idx) 从索引直接取回；
+    2. chunk 文本(doc)与元数据(meta)持久化到本地 SQLite，
+       查询时仅按命中的 idx 批量取出 top_k 条，不整体驻留内存；
+    3. 内存常驻仅保留：FAISS 索引本体 + id->idx 小映射（约 3MB）。
 
     约定：search() 返回的 scores 为"越大越相似"（已映射到 [0,1]），
     与 ChromaVectorStore 的分数语义保持一致。
@@ -109,48 +118,89 @@ class FaissVectorStore(BaseVectorStore):
         self._index = None
         self._dimension = settings.EMBEDDING_DIMENSION
         self._id_to_idx: Dict[str, int] = {}
-        self._idx_to_meta: Dict[int, Dict] = {}
-        self._idx_to_doc: Dict[int, str] = {}
-        self._idx_to_emb: Dict[int, List[float]] = {}
         self._lock = threading.Lock()
         self._save_path = os.path.join(settings.CHROMA_PERSIST_DIR, "faiss_index")
+        self._conn = None
         self._load_or_create()
+
+    # ---------- SQLite 元数据持久化 ----------
+
+    def _open_meta_db(self) -> sqlite3.Connection:
+        os.makedirs(self._save_path, exist_ok=True)
+        conn = sqlite3.connect(
+            os.path.join(self._save_path, "meta.sqlite3"),
+            check_same_thread=False,
+        )
+        # 与主库保持一致：WAL 模式避免并发读被写锁阻塞
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS chunks (
+                idx INTEGER PRIMARY KEY,
+                chunk_id TEXT UNIQUE NOT NULL,
+                doc TEXT,
+                meta TEXT
+            )"""
+        )
+        conn.commit()
+        return conn
 
     def _load_or_create(self):
         os.makedirs(self._save_path, exist_ok=True)
         index_file = os.path.join(self._save_path, "index.faiss")
-        meta_file = os.path.join(self._save_path, "metadata.pkl")
+        sqlite_file = os.path.join(self._save_path, "meta.sqlite3")
+        pkl_file = os.path.join(self._save_path, "metadata.pkl")
 
-        if os.path.exists(index_file) and os.path.exists(meta_file):
+        if os.path.exists(index_file) and os.path.exists(sqlite_file):
             import faiss
             self._index = faiss.read_index(index_file)
-            with open(meta_file, "rb") as f:
-                data = pickle.load(f)
-                self._id_to_idx = data.get("id_to_idx", {})
-                self._idx_to_meta = data.get("idx_to_meta", {})
-                self._idx_to_doc = data.get("idx_to_doc", {})
-                self._idx_to_emb = data.get("idx_to_emb", {})
+            self._conn = self._open_meta_db()
+            self._id_to_idx = {
+                row[0]: row[1]
+                for row in self._conn.execute("SELECT chunk_id, idx FROM chunks")
+            }
+        elif os.path.exists(index_file) and os.path.exists(pkl_file):
+            # 旧版数据：metadata.pkl -> SQLite 一次性迁移（忽略冗余的 idx_to_emb）
+            self._migrate_from_pickle(index_file, pkl_file)
         else:
             self._create_empty_index()
+
+    def _migrate_from_pickle(self, index_file: str, pkl_file: str):
+        import faiss
+        self._index = faiss.read_index(index_file)
+        with open(pkl_file, "rb") as f:
+            data = pickle.load(f)
+        id_to_idx = data.get("id_to_idx", {})
+        idx_to_doc = data.get("idx_to_doc", {})
+        idx_to_meta = data.get("idx_to_meta", {})
+
+        self._conn = self._open_meta_db()
+        self._conn.execute("DELETE FROM chunks")
+        rows = [
+            (idx, cid, idx_to_doc.get(idx, ""),
+             json.dumps(idx_to_meta.get(idx, {}), ensure_ascii=False))
+            for cid, idx in id_to_idx.items()
+        ]
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO chunks (idx, chunk_id, doc, meta) "
+            "VALUES (?, ?, ?, ?)",
+            rows,
+        )
+        self._conn.commit()
+        self._id_to_idx = dict(id_to_idx)
+        self._save()
 
     def _create_empty_index(self):
         import faiss
         self._index = faiss.IndexFlatIP(self._dimension)  # 内积相似度
         self._id_to_idx = {}
-        self._idx_to_meta = {}
-        self._idx_to_doc = {}
-        self._idx_to_emb = {}
+        self._conn = self._open_meta_db()
 
     def _save(self):
         import faiss
         faiss.write_index(self._index, os.path.join(self._save_path, "index.faiss"))
-        with open(os.path.join(self._save_path, "metadata.pkl"), "wb") as f:
-            pickle.dump({
-                "id_to_idx": self._id_to_idx,
-                "idx_to_meta": self._idx_to_meta,
-                "idx_to_doc": self._idx_to_doc,
-                "idx_to_emb": self._idx_to_emb,
-            }, f)
+        if self._conn is not None:
+            self._conn.commit()
 
     def add_embeddings(self, ids, embeddings, documents, metadatas=None):
         import faiss
@@ -161,14 +211,12 @@ class FaissVectorStore(BaseVectorStore):
         faiss.normalize_L2(vectors)
 
         with self._lock:
-            # 幂等：已存在的 chunk_id 先从映射中清除（旧向量行稍后随重建丢弃）
+            # 幂等：已存在的 chunk_id 先从映射与 SQLite 中清除（旧向量行稍后随重建丢弃）
             has_dup = False
             for cid in ids:
                 if cid in self._id_to_idx:
                     old_idx = self._id_to_idx[cid]
-                    self._idx_to_meta.pop(old_idx, None)
-                    self._idx_to_doc.pop(old_idx, None)
-                    self._idx_to_emb.pop(old_idx, None)
+                    self._conn.execute("DELETE FROM chunks WHERE idx = ?", (old_idx,))
                     del self._id_to_idx[cid]
                     has_dup = True
 
@@ -176,12 +224,20 @@ class FaissVectorStore(BaseVectorStore):
             start_idx = self._index.ntotal
             self._index.add(vectors)
 
+            rows = []
             for i, cid in enumerate(ids):
                 idx = start_idx + i
                 self._id_to_idx[cid] = idx
-                self._idx_to_meta[idx] = metadatas[i] if metadatas else {}
-                self._idx_to_doc[idx] = documents[i]
-                self._idx_to_emb[idx] = embeddings[i]
+                rows.append((
+                    idx, cid, documents[i],
+                    json.dumps(metadatas[i] if metadatas else {}, ensure_ascii=False),
+                ))
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO chunks (idx, chunk_id, doc, meta) "
+                "VALUES (?, ?, ?, ?)",
+                rows,
+            )
+            self._conn.commit()
 
             if has_dup:
                 # 存在被替换的旧行时整体重建，避免索引中出现孤儿行
@@ -204,6 +260,17 @@ class FaissVectorStore(BaseVectorStore):
 
             distances, indices = self._index.search(vec, search_k)
 
+            # 仅按命中的 idx 批量取出 chunk_id/doc/meta（不整体加载）
+            hit_idxs = [int(i) for i in indices[0] if i >= 0]
+            meta_rows: Dict[int, tuple] = {}
+            if hit_idxs:
+                ph = ",".join("?" * len(hit_idxs))
+                for r in self._conn.execute(
+                    f"SELECT idx, chunk_id, doc, meta FROM chunks WHERE idx IN ({ph})",
+                    hit_idxs,
+                ):
+                    meta_rows[int(r[0])] = (r[1], r[2], json.loads(r[3]) if r[3] else {})
+
             ids_list = []
             docs_list = []
             metas_list = []
@@ -212,15 +279,17 @@ class FaissVectorStore(BaseVectorStore):
             for i, idx in enumerate(indices[0]):
                 if idx < 0:
                     continue
-                chunk_id = self._id_to_idx_reverse().get(idx, f"unk_{idx}")
-                meta = self._idx_to_meta.get(idx, {})
+                row = meta_rows.get(int(idx))
+                if row is None:
+                    continue
+                chunk_id, doc, meta = row
 
                 # 过滤
                 if where and not self._match_filter(meta, where):
                     continue
 
                 ids_list.append(chunk_id)
-                docs_list.append(self._idx_to_doc.get(idx, ""))
+                docs_list.append(doc)
                 metas_list.append(meta)
                 # 内积相似度映射到 [0,1]（越大越相似）
                 ip = float(distances[0][i])
@@ -236,9 +305,6 @@ class FaissVectorStore(BaseVectorStore):
                 "documents": [docs_list],
                 "metadatas": [metas_list],
             }
-
-    def _id_to_idx_reverse(self):
-        return {v: k for k, v in self._id_to_idx.items()}
 
     def _match_filter(self, meta: Dict, where: Dict) -> bool:
         if "$and" in where:
@@ -261,70 +327,68 @@ class FaissVectorStore(BaseVectorStore):
         return True
 
     def delete_by_ids(self, ids):
-        import faiss
-        import numpy as np
-
         with self._lock:
             removed = False
             for cid in ids:
                 if cid in self._id_to_idx:
-                    del self._idx_to_meta[self._id_to_idx[cid]]
-                    del self._idx_to_doc[self._id_to_idx[cid]]
-                    del self._idx_to_emb[self._id_to_idx[cid]]
+                    idx = self._id_to_idx[cid]
+                    self._conn.execute("DELETE FROM chunks WHERE idx = ?", (idx,))
                     del self._id_to_idx[cid]
                     removed = True
             if removed:
+                self._conn.commit()
                 self._rebuild_index()
 
     def delete_by_filter(self, where):
         with self._lock:
             to_remove = []
-            for idx, meta in self._idx_to_meta.items():
+            for idx, chunk_id, meta_json in self._conn.execute(
+                "SELECT idx, chunk_id, meta FROM chunks"
+            ):
+                meta = json.loads(meta_json) if meta_json else {}
                 if self._match_filter(meta, where):
-                    to_remove.append(idx)
+                    to_remove.append((idx, chunk_id))
 
             if to_remove:
-                for idx in to_remove:
-                    del self._idx_to_meta[idx]
-                    del self._idx_to_doc[idx]
-                    del self._idx_to_emb[idx]
-                self._id_to_idx = {k: v for k, v in self._id_to_idx.items()
-                                  if v not in to_remove}
+                for idx, chunk_id in to_remove:
+                    self._conn.execute("DELETE FROM chunks WHERE idx = ?", (idx,))
+                    self._id_to_idx.pop(chunk_id, None)
+                self._conn.commit()
                 self._rebuild_index()
 
     def _rebuild_index(self):
-        """基于保留的 embedding 真正重建 FAISS 索引（不丢失数据）"""
+        """基于 FAISS 已存向量 reconstruct 重建索引（不再依赖冗余副本）"""
         import faiss
         import numpy as np
 
-        new_index = faiss.IndexFlatIP(self._dimension)
-        new_id_to_idx = {}
-        new_idx_to_meta = {}
-        new_idx_to_doc = {}
-        new_idx_to_emb = {}
+        rows = list(self._conn.execute(
+            "SELECT idx, chunk_id, doc, meta FROM chunks ORDER BY idx"
+        ))
 
-        for cid, old_idx in self._id_to_idx.items():
-            emb = self._idx_to_emb.get(old_idx)
-            if emb is None:
-                continue  # 没有原始向量则跳过（防御）
-            vec = np.array([emb], dtype=np.float32)
-            faiss.normalize_L2(vec)
+        new_index = faiss.IndexFlatIP(self._dimension)
+        new_id_to_idx: Dict[str, int] = {}
+        new_rows = []
+
+        for old_idx, chunk_id, doc, meta_json in rows:
+            vec = self._index.reconstruct(int(old_idx))  # 已归一化的 float32 向量
             new_idx = new_index.ntotal
-            new_index.add(vec)
-            new_id_to_idx[cid] = new_idx
-            new_idx_to_meta[new_idx] = self._idx_to_meta.get(old_idx, {})
-            new_idx_to_doc[new_idx] = self._idx_to_doc.get(old_idx, "")
-            new_idx_to_emb[new_idx] = emb
+            new_index.add(np.ascontiguousarray(vec, dtype=np.float32).reshape(1, -1))
+            new_id_to_idx[chunk_id] = new_idx
+            new_rows.append((new_idx, chunk_id, doc, meta_json))
 
         self._index = new_index
         self._id_to_idx = new_id_to_idx
-        self._idx_to_meta = new_idx_to_meta
-        self._idx_to_doc = new_idx_to_doc
-        self._idx_to_emb = new_idx_to_emb
+        self._conn.execute("DELETE FROM chunks")
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO chunks (idx, chunk_id, doc, meta) "
+            "VALUES (?, ?, ?, ?)",
+            new_rows,
+        )
+        self._conn.commit()
         self._save()
 
     def count(self):
-        return len(self._id_to_idx)
+        return self._index.ntotal
 
 
 # ==================== 工厂函数 ====================
@@ -333,12 +397,24 @@ _vector_store: Optional[BaseVectorStore] = None
 
 
 def get_vector_store() -> BaseVectorStore:
-    """获取向量存储实例（自动选择可用后端）"""
+    """获取向量存储实例（按 VECTOR_BACKEND 配置选择后端）"""
     global _vector_store
     if _vector_store is not None:
         return _vector_store
 
-    # 优先尝试 ChromaDB
+    backend = settings.VECTOR_BACKEND.lower()
+
+    # 强制 FAISS（低内存后端，2 核 2G 低配服务器场景）
+    if backend == "faiss":
+        _vector_store = FaissVectorStore()
+        return _vector_store
+
+    # 强制 ChromaDB
+    if backend == "chroma":
+        _vector_store = ChromaVectorStore()
+        return _vector_store
+
+    # auto：优先 ChromaDB（sqlite3>=3.35），失败则降级 FAISS
     try:
         import sqlite3
         if sqlite3.sqlite_version_info >= (3, 35, 0):
@@ -347,6 +423,5 @@ def get_vector_store() -> BaseVectorStore:
     except Exception:
         pass
 
-    # 降级为 FAISS
     _vector_store = FaissVectorStore()
     return _vector_store

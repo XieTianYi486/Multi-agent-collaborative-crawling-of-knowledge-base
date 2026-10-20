@@ -37,9 +37,12 @@ class CounselorService:
 
     # ==================== 检索与模式判定 ====================
 
-    def _retrieve(self, question: str) -> List[Dict]:
+    def _retrieve(self, question: str, security_level: Optional[int] = None) -> List[Dict]:
         try:
-            return self.retriever.search(question, top_k=settings.COUNSELOR_TOP_K)
+            return self.retriever.search(
+                question, top_k=settings.COUNSELOR_TOP_K,
+                security_level=security_level,
+            )
         except Exception:
             logger.warning("导员知识库检索异常:\n%s", traceback.format_exc())
             return []
@@ -75,7 +78,10 @@ class CounselorService:
 
     # ==================== 同步问答 ====================
 
-    def ask(self, question: str, chat_history: Optional[List[Dict]] = None) -> Dict:
+    def ask(
+        self, question: str, chat_history: Optional[List[Dict]] = None,
+        security_level: Optional[int] = None,
+    ) -> Dict:
         """同步问答（人设 + 知识库双模式）"""
         t_start = time.time()
 
@@ -89,7 +95,7 @@ class CounselorService:
             }
 
         t_ret_start = time.time()
-        chunks = self._retrieve(question)
+        chunks = self._retrieve(question, security_level=security_level)
         hit = self._is_hit(chunks)
         context = chunks if hit else []
         t_retrieval = (time.time() - t_ret_start) * 1000
@@ -118,6 +124,7 @@ class CounselorService:
 
     async def ask_stream(
         self, question: str, chat_history: Optional[List[Dict]] = None,
+        security_level: Optional[int] = None,
     ) -> AsyncGenerator[Dict, None]:
         """
         流式问答（SSE）
@@ -143,7 +150,7 @@ class CounselorService:
 
         # 检索 + 模式判定
         t_ret_start = time.time()
-        chunks = self._retrieve(question)
+        chunks = self._retrieve(question, security_level=security_level)
         hit = self._is_hit(chunks)
         context = chunks if hit else []
         t_retrieval = (time.time() - t_ret_start) * 1000

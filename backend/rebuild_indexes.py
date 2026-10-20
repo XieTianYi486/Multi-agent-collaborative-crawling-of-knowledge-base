@@ -123,8 +123,13 @@ def main():
 
     # 4. 验证
     print("\n验证:")
+    # 从 SQLite 拿 chunk_ids 计数（低内存版不再驻留 _id_to_idx）
+    cur = vs._conn.cursor()
     for doc_id in sorted(set(c.document_id for c in chunks)):
-        cnt = sum(1 for k in vs._id_to_idx if k.startswith(f"doc_{doc_id}_"))
+        cnt = cur.execute(
+            "SELECT COUNT(*) FROM chunks WHERE chunk_id LIKE ?",
+            (f"doc_{doc_id}_chunk_%",)
+        ).fetchone()[0]
         bcnt = sum(1 for c in bm._chunks if c.get("document_id") == doc_id)
         title = docs.get(doc_id).title if doc_id in docs else "?"
         print(f"  doc_{doc_id} ({title}): FAISS={cnt} BM25={bcnt}")

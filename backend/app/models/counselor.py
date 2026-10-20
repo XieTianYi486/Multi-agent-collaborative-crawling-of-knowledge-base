@@ -167,6 +167,10 @@ class CounselorKbChunk(Base):
     source_url: Mapped[Optional[str]] = mapped_column(
         String(1024), nullable=True, comment="来源URL"
     )
+    security_level: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False,
+        comment="密级：1=公开 2=内部 3=机密 4=绝密"
+    )
     embedding: Mapped[Optional[list]] = mapped_column(
         JSON, nullable=True, comment="条款正文的向量（JSON 数组，检索时加载到内存）"
     )

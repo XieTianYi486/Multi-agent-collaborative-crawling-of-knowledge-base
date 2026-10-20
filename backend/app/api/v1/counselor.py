@@ -68,6 +68,8 @@ def ask_counselor(
 
     user_id: int = current_user.id
     username: str = current_user.username
+    role_code: str = current_user.role.code if current_user.role else ""
+    security_level = _get_security_level(role_code)
 
     if _check_question_sensitive(db, request.question, current_user):
         return APIResponse(
@@ -80,7 +82,10 @@ def ask_counselor(
 
     chat_history = _load_history(db, request.session_id)
 
-    result = counselor.ask(question=request.question, chat_history=chat_history)
+    result = counselor.ask(
+        question=request.question, chat_history=chat_history,
+        security_level=security_level,
+    )
 
     # 回答脱敏
     masked_answer, _ = SensitiveService.mask_answer(
@@ -137,6 +142,8 @@ async def ask_counselor_stream(
     user_id: int = current_user.id
     username: str = current_user.username
     question: str = request.question
+    role_code: str = current_user.role.code if current_user.role else ""
+    security_level = _get_security_level(role_code)
 
     # 敏感词拦截（以 SSE 协议返回）
     if _check_question_sensitive(db, question, current_user):
@@ -163,7 +170,10 @@ async def ask_counselor_stream(
 
     async def event_stream():
         try:
-            async for event in counselor.ask_stream(question=question, chat_history=chat_history):
+            async for event in counselor.ask_stream(
+                question=question, chat_history=chat_history,
+                security_level=security_level,
+            ):
                 if event["type"] == "token":
                     stream_result["full_answer"] += event["data"]
                     yield f"event: token\ndata: {json.dumps({'token': event['data']}, ensure_ascii=False)}\n\n"
@@ -407,3 +417,19 @@ def _iso(dt) -> Optional[str]:
 
 def _generate_session_id() -> str:
     return f"csess_{uuid_lib.uuid4().hex[:16]}"
+
+
+def _get_security_level(role_code: str) -> int:
+    """
+    根据用户角色码确定可访问的文档密级上限
+    与智能问答（/chat）保持一致：
+        1 = 公开, 2 = 内部, 3 = 机密, 4 = 绝密
+    super_admin/knowledge_admin → 4
+    dept_admin                 → 3
+    employee 及未知            → 1
+    """
+    if role_code in ("super_admin", "knowledge_admin"):
+        return 4
+    if role_code == "dept_admin":
+        return 3
+    return 1

@@ -34,15 +34,29 @@ class Settings(BaseSettings):
     _data_dir: str = str(BASE_DIR / "data")
     DATABASE_URL: str = f"sqlite:///{_data_dir}/enterprise_rag.db"
 
-    # ==================== 阿里云百炼配置 ====================
-    DASHSCOPE_API_KEY: str = ""  # 必填！从阿里云百炼控制台获取
-    DASHSCOPE_BASE_URL: str = ""  # MaaS 工作空间 API 端点（可选）
-    DASHSCOPE_OPENAI_BASE_URL: str = ""  # OpenAI 兼容模式端点（可选，用于流式调用）
-    LLM_MODEL: str = "qwen-plus"              # 对话模型
-    LLM_TEMPERATURE: float = 0.1              # 生成温度（越低越确定）
-    LLM_MAX_TOKENS: int = 2048                # 最大生成 token 数
-    EMBEDDING_MODEL: str = "text-embedding-v2"  # 嵌入模型
-    EMBEDDING_DIMENSION: int = 1536           # text-embedding-v2 维度
+    # ==================== LLM 对话配置 ====================
+    # provider: dashscope=阿里云百炼 qwen-plus, deepseek=DeepSeek deepseek-chat
+    LLM_PROVIDER: str = "dashscope"
+    LLM_MODEL: str = "qwen-plus"
+    LLM_API_KEY: str = ""
+    LLM_BASE_URL: str = ""  # 默认按 provider 自动填充
+    LLM_TEMPERATURE: float = 0.1
+    LLM_MAX_TOKENS: int = 2048
+
+    # ==================== 向量嵌入（支持 DashScope / DeepSeek 远程 + ONNX 本地）====================
+    # provider: dashscope=阿里云百炼 text-embedding-v2, deepseek=DeepSeek API (不公开)
+    #           onnx_bge=本地 BGE-small-zh-v1.5 ONNX (512维, 零成本零依赖)
+    EMBEDDING_PROVIDER: str = "dashscope"
+    EMBEDDING_API_KEY: str = ""   # 远程 API 用；优先，否则回退 DASHSCOPE_API_KEY
+    EMBEDDING_BASE_URL: str = ""  # 留空则按 provider 自动填
+    EMBEDDING_LOCAL_MODEL: str = ""  # 本地 ONNX 模型目录（onnx_bge 用）
+    EMBEDDING_MODEL: str = "text-embedding-v2"
+    EMBEDDING_DIMENSION: int = 1536
+
+    # 向后兼容：阿里云百炼旧配置项
+    DASHSCOPE_API_KEY: str = ""
+    DASHSCOPE_BASE_URL: str = ""
+    DASHSCOPE_OPENAI_BASE_URL: str = ""
 
     # ==================== 检索配置 ====================
     VECTOR_TOP_K: int = 20        # 向量检索召回数量
@@ -113,7 +127,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_DIR: str = str(BASE_DIR / "logs")
 
-    # ==================== ChromaDB 配置 ====================
+    # ==================== 向量后端配置 ====================
+    # auto: 优先 ChromaDB，sqlite3<3.35 时降级 FAISS
+    # chroma: 强制 ChromaDB；faiss: 强制 FAISS
+    VECTOR_BACKEND: str = "auto"
     CHROMA_PERSIST_DIR: str = str(BASE_DIR / "chroma_data")
     CHROMA_COLLECTION_NAME: str = "labor_law_docs"
 
@@ -127,7 +144,7 @@ class Settings(BaseSettings):
             os.makedirs(dir_path, exist_ok=True)
 
     model_config = dict(
-        env_file=".env",
+        env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore"  # 忽略未知的环境变量

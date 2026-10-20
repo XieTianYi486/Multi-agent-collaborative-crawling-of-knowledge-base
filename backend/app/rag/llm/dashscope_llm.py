@@ -1,6 +1,5 @@
 # ============================================================
-# 百炼 DashScope LLM 封装
-# 使用 OpenAI 兼容模式调用 qwen-plus/qwen-max
+# LLM 对话封装（支持 DashScope / DeepSeek，OpenAI 兼容接口）
 # 支持同步和流式两种输出方式
 # ============================================================
 
@@ -14,31 +13,45 @@ from app.core.config import settings
 from app.core.exceptions import LLMException
 
 
-class BailianLLM:
-    """
-    百炼大模型调用封装
+# 各平台默认 base_url
+_PROVIDER_BASE_URLS = {
+    "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+}
 
-    使用 OpenAI 兼容接口（兼容性最好，支持流式输出）
-    模型: qwen-plus（默认）
+
+class ChatLLM:
+    """
+    通用 LLM 调用封装（OpenAI 兼容接口）
+
+    通过 LLM_PROVIDER 切换平台:
+      - dashscope: 阿里云百炼 qwen-plus (默认)
+      - deepseek: DeepSeek deepseek-chat
     """
 
     def __init__(self):
-        self.api_key = settings.DASHSCOPE_API_KEY
+        self.provider = settings.LLM_PROVIDER.lower()
         self.model = settings.LLM_MODEL
         self.temperature = settings.LLM_TEMPERATURE
         self.max_tokens = settings.LLM_MAX_TOKENS
 
-        if not self.api_key:
-            raise LLMException("未配置 DASHSCOPE_API_KEY")
+        # API Key: 优先用 LLM_API_KEY，否则回退到 DASHSCOPE_API_KEY（向后兼容）
+        api_key = settings.LLM_API_KEY
+        if not api_key and self.provider == "dashscope":
+            api_key = settings.DASHSCOPE_API_KEY
+        if not api_key:
+            raise LLMException(f"未配置 LLM API Key (provider={self.provider})")
+        self.api_key = api_key
 
-        # 使用 OpenAI 兼容客户端
-        base_url = settings.DASHSCOPE_OPENAI_BASE_URL or \
-            "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        # base_url: 优先用 LLM_BASE_URL，否则按 provider 自动选
+        base_url = settings.LLM_BASE_URL or _PROVIDER_BASE_URLS.get(
+            self.provider, _PROVIDER_BASE_URLS["dashscope"])
 
         self._client = OpenAI(
             api_key=self.api_key,
             base_url=base_url,
         )
+        print(f"[LLM] provider={self.provider}, model={self.model}, base_url={base_url}")
 
     def chat(
         self,
@@ -113,12 +126,12 @@ class BailianLLM:
 
 
 # --- 全局单例 ---
-_llm_instance: Optional[BailianLLM] = None
+_llm_instance: Optional[ChatLLM] = None
 
 
-def get_llm() -> BailianLLM:
+def get_llm() -> ChatLLM:
     """获取 LLM 客户端单例"""
     global _llm_instance
     if _llm_instance is None:
-        _llm_instance = BailianLLM()
+        _llm_instance = ChatLLM()
     return _llm_instance
