@@ -109,7 +109,9 @@ import { Search, FolderOpened, ArrowRight, Document, Grid, Tickets } from '@elem
 import client from '@/api/client'
 import MarkdownIt from 'markdown-it'
 
-const md = new MarkdownIt({ html: true, breaks: true })
+// 安全：关闭 html 渲染——爬取入库的网页内容可能含原始 HTML（含脚本），
+// 开启 html:true 会被直接注入执行（存储型 XSS）；原始 HTML 标签将按纯文本展示
+const md = new MarkdownIt({ breaks: true })
 
 const loading = ref(false)
 const keyword = ref('')

@@ -119,6 +119,10 @@ class Settings(BaseSettings):
 
     # ==================== AI 导员 ====================
     COUNSELOR_ENABLED: bool = True        # 是否启用 AI 导员悬浮入口
+    # 导员知识库回答模式：full=全量条款注入（小知识库，命中率高、免调参）；
+    #                  retrieval=向量+BM25 混合检索 + 阈值判定（知识库变大后使用）
+    COUNSELOR_CONTEXT_MODE: str = "full"
+    COUNSELOR_MAX_CONTEXT_CHARS: int = 80000  # 全量注入上下文长度告警阈值（超出说明该改回检索）
     COUNSELOR_TOP_K: int = 6              # 导员知识库检索返回的条款数量
     COUNSELOR_MIN_SCORE: float = 0.3      # 导员知识库命中阈值（条款绝对余弦相似度，低于此值视为未命中，转人设兜底）
     COUNSELOR_KB_DIR: str = str(BASE_DIR / "data" / "counselor_kb")  # 导员知识库原始文档目录

@@ -108,10 +108,12 @@
         <!-- 输入区 -->
         <footer class="cp-foot">
           <textarea
+            ref="inputEl"
             v-model="input"
             class="cp-input"
             rows="1"
             placeholder="和导员说说你的心事或疑问…"
+            @input="autoResizeInput"
             @keydown.enter.exact.prevent="send"
           />
           <button v-if="streaming" class="cp-send stop" title="停止" @click="stop">
@@ -154,6 +156,7 @@ const showHistory = ref(false)
 const notice = ref('')
 const errorMsg = ref('')
 const listEl = ref<HTMLElement | null>(null)
+const inputEl = ref<HTMLTextAreaElement | null>(null)
 
 // ==================== 拖动 ====================
 const FAB_SIZE = 58      // 悬浮按钮边长
@@ -275,7 +278,10 @@ function onWindowResize() {
   }
 }
 
-onMounted(() => window.addEventListener('resize', onWindowResize))
+onMounted(() => {
+  window.addEventListener('resize', onWindowResize)
+  autoResizeInput()
+})
 onUnmounted(() => {
   window.removeEventListener('resize', onWindowResize)
   document.body.classList.remove('cp-dragging')
@@ -297,6 +303,20 @@ function scrollToBottom() {
   })
 }
 
+// 输入框随内容自动增高（上限 96px），避免多行输入时过早出现内部滚动条
+function autoResizeInput() {
+  const el = inputEl.value
+  if (!el) return
+  el.style.height = 'auto'
+  // scrollHeight 不含边框，而元素是 border-box、且有 1px 边框，
+  // 直接用 scrollHeight 作高度会差 2px 触发滚动条，这里补回上下边框宽度
+  const fullHeight = el.scrollHeight + (el.offsetHeight - el.clientHeight)
+  const overflow = fullHeight > 96
+  el.style.height = `${overflow ? 96 : fullHeight}px`
+  // 内容未超出上限时强制隐藏滚动条，规避亚像素舍入导致的残留滚动条
+  el.style.overflowY = overflow ? 'auto' : 'hidden'
+}
+
 async function openPanel() {
   open.value = true
   await nextTick()
@@ -309,16 +329,12 @@ async function openPanel() {
   }
   loadSessions()
   scrollToBottom()
+  autoResizeInput()
 }
 
 function closePanel() {
-  // 收起后按钮落在面板右下方，保持位置连续
-  const w = panelEl.value?.offsetWidth || 390
-  const h = panelEl.value?.offsetHeight || 580
-  fabPos.value = {
-    x: clamp(panelPos.value.x + w - FAB_SIZE, window.innerWidth - FAB_SIZE - EDGE_MARGIN),
-    y: clamp(panelPos.value.y + h + PANEL_GAP, window.innerHeight - FAB_SIZE - EDGE_MARGIN),
-  }
+  // 收起后按钮直接回到展开前的原始位置：面板打开期间按钮被隐藏、位置不会被改写，
+  // 因此无需用面板位置反向推导，避免"拖到上方→展开（面板被 clamp 到顶部）→收起后按钮掉到下方"的位置漂移
   open.value = false
   showHistory.value = false
 }
@@ -386,6 +402,8 @@ function send() {
   if (!question || streaming.value) return
 
   input.value = ''
+  // 清空输入框后把高度复位，避免残留之前的增高
+  nextTick(autoResizeInput)
   notice.value = ''
   errorMsg.value = ''
   messages.value.push({ id: ++seq, role: 'user', content: question })
@@ -830,9 +848,11 @@ function stop() {
 .cp-input {
   flex: 1;
   resize: none;
-  height: 40px;
+  min-height: 40px;
   max-height: 96px;
-  overflow-y: auto;
+  overflow-y: hidden;
+  /* 隐藏滚动条外观，仅保留溢出的滚动能力，避免出现多余上下移动的条 */
+  scrollbar-width: none;
   padding: 10px 12px;
   font-size: 13.5px;
   font-family: inherit;
@@ -844,6 +864,8 @@ function stop() {
   outline: none;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
+.cp-input::-webkit-scrollbar { display: none; }
+.cp-input::-webkit-scrollbar-thumb { display: none; }
 .cp-input:focus {
   border-color: var(--color-primary, #4f46e5);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);

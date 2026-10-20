@@ -112,7 +112,14 @@ export function counselorStream(
     signal: controller.signal,
   })
     .then(async (response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      // 5xx 多为后端刚重启还没就绪，直接抛状态码用户看不懂，这里给出可操作提示
+      if (!response.ok) {
+        throw new Error(
+          response.status >= 500
+            ? `导员服务暂时不可用（HTTP ${response.status}），可能正在启动或重启，请等几秒再试`
+            : `HTTP ${response.status}`,
+        )
+      }
       const reader = response.body?.getReader()
       if (!reader) throw new Error('No response body')
 

@@ -362,8 +362,9 @@ class ChatService:
         # === 第5步：流式 LLM 生成 ===
         t_llm_start = time.time()
         full_answer = ""
+        usage: Dict = {}
         try:
-            async for token in self.llm.chat_stream(messages):
+            async for token in self.llm.chat_stream(messages, usage_out=usage):
                 full_answer += token
                 yield {"type": "token", "data": token}
         except LLMException as e:
@@ -385,6 +386,7 @@ class ChatService:
             "data": {
                 "full_answer": full_answer,
                 "total_tokens": len(full_answer) // 3,  # 粗略估算
+                "usage": usage,
                 "latency": {
                     "retrieval_ms": round(t_retrieval),
                     "llm_ms": round(t_llm),

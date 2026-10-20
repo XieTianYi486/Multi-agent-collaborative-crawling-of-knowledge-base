@@ -74,8 +74,8 @@ class ChatLLM:
             response = self._client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
-                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                 stream=False,
             )
 
@@ -97,6 +97,7 @@ class ChatLLM:
         messages: List[Dict[str, str]],
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        usage_out: Optional[Dict] = None,
     ) -> AsyncGenerator[str, None]:
         """
         流式对话（返回 token 生成器）
@@ -109,8 +110,8 @@ class ChatLLM:
             stream = self._client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
-                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                 stream=True,
                 stream_options={"include_usage": True},
             )
@@ -120,6 +121,12 @@ class ChatLLM:
                     delta = chunk.choices[0].delta
                     if delta and delta.content:
                         yield delta.content
+                # include_usage 模式下末尾会有一个 usage 块（choices 为空）：
+                # 提取真实 token 用量，供问答日志成本统计（避免流式路径用量恒为 0）
+                if chunk.usage and usage_out is not None:
+                    usage_out["prompt_tokens"] = chunk.usage.prompt_tokens or 0
+                    usage_out["completion_tokens"] = chunk.usage.completion_tokens or 0
+                    usage_out["total_tokens"] = chunk.usage.total_tokens or 0
 
         except Exception as e:
             raise LLMException(f"LLM 流式调用失败: {str(e)}")

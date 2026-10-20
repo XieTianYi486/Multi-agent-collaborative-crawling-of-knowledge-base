@@ -55,6 +55,13 @@ def _check_question_sensitive(db: Session, question: str, user: User) -> bool:
     return True
 
 
+def _error_stream(message: str) -> StreamingResponse:
+    """以 SSE 协议返回错误事件（避免抛出裸 HTTP 500，让前端能给出可读提示）"""
+    def gen():
+        yield f"event: error\ndata: {json.dumps({'message': message}, ensure_ascii=False)}\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 # ==================== 同步提问 ====================
 
 @router.post("/ask", response_model=APIResponse, summary="导员同步提问")
@@ -85,6 +92,8 @@ def ask_counselor(
     result = counselor.ask(
         question=request.question, chat_history=chat_history,
         security_level=security_level,
+        user_profile=_build_user_profile(current_user),
+        memory=_load_cross_session_memory(db, user_id, request.session_id),
     )
 
     # 回答脱敏
@@ -145,34 +154,48 @@ async def ask_counselor_stream(
     role_code: str = current_user.role.code if current_user.role else ""
     security_level = _get_security_level(role_code)
 
+    # 前置阶段（敏感词校验 / 会话与用户消息落库）一旦失败就以 SSE error 事件返回，
+    # 避免向客户端抛出无信息的 HTTP 500
+    try:
+        blocked = _check_question_sensitive(db, question, current_user)
+        session_id = request.session_id or _generate_session_id()
+
+        if not blocked:
+            chat_history = _load_history(db, request.session_id)
+            # 跨会话记忆需在 db.close() 之前取，之后 db 会话已关闭
+            memory = _load_cross_session_memory(db, user_id, request.session_id)
+
+            # 创建/获取会话 + 保存用户消息
+            if not request.session_id:
+                db.add(CounselorSession(
+                    id=session_id, user_id=user_id, title=question[:50],
+                ))
+                db.flush()
+            db.add(CounselorMessage(session_id=session_id, role="user", content=question))
+            db.commit()
+            db.close()
+    except Exception as e:
+        logger.exception("导员流式问答前置阶段失败")
+        return _error_stream(f"导员服务暂时不可用，请稍后重试（{type(e).__name__}）")
+
     # 敏感词拦截（以 SSE 协议返回）
-    if _check_question_sensitive(db, question, current_user):
+    if blocked:
         def blocked_stream():
             yield f"event: token\ndata: {json.dumps({'token': BLOCKED_QUESTION_RESPONSE}, ensure_ascii=False)}\n\n"
             yield f"event: sources\ndata: {json.dumps([], ensure_ascii=False)}\n\n"
             yield f"event: done\ndata: {json.dumps({'full_answer': BLOCKED_QUESTION_RESPONSE, 'mode': 'blocked', 'sources': []}, ensure_ascii=False)}\n\n"
         return StreamingResponse(blocked_stream(), media_type="text/event-stream")
 
-    chat_history = _load_history(db, request.session_id)
-
-    # 创建/获取会话 + 保存用户消息
-    session_id = request.session_id or _generate_session_id()
-    if not request.session_id:
-        db.add(CounselorSession(
-            id=session_id, user_id=user_id, title=question[:50],
-        ))
-        db.flush()
-    db.add(CounselorMessage(session_id=session_id, role="user", content=question))
-    db.commit()
-    db.close()
-
     stream_result = {"full_answer": "", "sources": [], "mode": "", "ok": False, "latency": {}}
+
+    user_profile = _build_user_profile(current_user)
 
     async def event_stream():
         try:
             async for event in counselor.ask_stream(
                 question=question, chat_history=chat_history,
                 security_level=security_level,
+                user_profile=user_profile, memory=memory,
             ):
                 if event["type"] == "token":
                     stream_result["full_answer"] += event["data"]
@@ -396,19 +419,83 @@ def submit_feedback(
 
 # ==================== 工具函数 ====================
 
+def _build_user_profile(user: User) -> dict:
+    """
+    从登录态取出导员可用的学生身份信息（姓名 / 院系班级）。
+
+    仅供 system prompt 用于称呼同学，不额外落地存储。
+    """
+    return {
+        "name": (user.real_name or user.username or "").strip(),
+        "department": (user.department or "").strip(),
+    }
+
+
 def _load_history(db: Session, session_id: Optional[str]) -> Optional[List[dict]]:
-    """加载会话历史（仅最近 20 条，供多轮上下文）"""
+    """加载会话历史（取最近的 20 条，供多轮上下文）"""
     if not session_id:
         return None
     msgs = (
         db.query(CounselorMessage)
         .filter(CounselorMessage.session_id == session_id)
-        .order_by(CounselorMessage.created_at.asc())
+        .order_by(CounselorMessage.created_at.desc(), CounselorMessage.id.desc())
         .limit(20).all()
     )
     if not msgs:
         return None
+    msgs.reverse()  # 倒序取最近 20 条后翻回时间正序，保证喂给模型的是最近的上下文
     return [{"role": m.role, "content": m.content} for m in msgs]
+
+
+# 跨会话记忆最多取该用户最近多少条消息（配成约 4 轮问答）
+CROSS_SESSION_MEMORY_MESSAGES = 8
+
+
+def _load_cross_session_memory(
+    db: Session, user_id: int, current_session_id: Optional[str],
+) -> Optional[List[dict]]:
+    """
+    加载跨会话记忆：同一用户在其他会话里的最近若干轮问答。
+
+    只取最近 8 条消息并截断，避免历史记忆挤占 prompt 预算；
+    当前会话的内容不在此列（已由 chat_history 提供）。
+    """
+    query = (
+        db.query(CounselorMessage)
+        .join(CounselorSession, CounselorSession.id == CounselorMessage.session_id)
+        .filter(CounselorSession.user_id == user_id)
+    )
+    if current_session_id:
+        query = query.filter(CounselorMessage.session_id != current_session_id)
+
+    msgs = query.order_by(
+        CounselorMessage.created_at.desc(), CounselorMessage.id.desc(),
+    ).limit(CROSS_SESSION_MEMORY_MESSAGES).all()
+    if not msgs:
+        return None
+    msgs.reverse()
+
+    def _date(msg) -> str:
+        return msg.created_at.strftime("%m-%d") if msg.created_at else ""
+
+    turns: List[dict] = []
+    pending_question = None
+    for msg in msgs:
+        if msg.role == "user":
+            pending_question = msg
+        elif pending_question is not None:
+            turns.append({
+                "question": pending_question.content,
+                "answer": msg.content,
+                "date": _date(pending_question) or _date(msg),
+            })
+            pending_question = None
+    # 末尾只剩提问、没有回答的，也保留下来避免丢信息
+    if pending_question is not None:
+        turns.append({
+            "question": pending_question.content, "answer": "", "date": _date(pending_question),
+        })
+    return turns or None
 
 
 def _iso(dt) -> Optional[str]:

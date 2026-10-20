@@ -100,11 +100,27 @@ class CounselorRetriever:
             "导员知识库加载完成：%d 条条款，向量索引=%s",
             len(chunks), "启用" if self._emb_matrix is not None else "未启用",
         )
+        total_chars = sum(len(c["content"]) for c in chunks)
+        if total_chars > settings.COUNSELOR_MAX_CONTEXT_CHARS:
+            logger.warning(
+                "导员知识库条文总量 %d 字符，已超过全量注入阈值 %d，"
+                "建议将 COUNSELOR_CONTEXT_MODE 切回 retrieval",
+                total_chars, settings.COUNSELOR_MAX_CONTEXT_CHARS,
+            )
 
     @property
     def is_empty(self) -> bool:
         self._load()
         return len(self._chunks) == 0
+
+    def all_chunks(self) -> List[Dict]:
+        """
+        返回知识库全部条款（全量注入模式使用）。
+
+        顺序即入库顺序（文档 → 章节 → 条文），保持稳定以便命中 prompt 缓存。
+        """
+        self._load()
+        return list(self._chunks)
 
     # ---------- 检索 ----------
 

@@ -17,7 +17,8 @@ from app.models.counselor import CounselorKbChunk
 
 logger = logging.getLogger(__name__)
 
-ARTICLE_RE = re.compile(r"^第([一二三四五六七八九十百]+)条$")
+# 行首条文标记，允许"第九条 国家奖学金评定条件"这种带小标题的内联写法
+ARTICLE_RE = re.compile(r"^第([一二三四五六七八九十百]+)条(?:\s+(.+))?$")
 CHAPTER_RE = re.compile(r"^第([一二三四五六七八九十]+)章(.*)$")
 
 
@@ -93,9 +94,13 @@ def parse_md(path: str) -> List[Dict]:
             i += 1
             continue
 
-        if ARTICLE_RE.match(s):
+        m_at = ARTICLE_RE.match(s)
+        if m_at:
             flush()
-            article_no = s
+            article_no = f"第{m_at.group(1)}条"
+            title_tail = (m_at.group(2) or "").strip()
+            if title_tail:
+                buffer.append(title_tail)
             i += 1
             continue
 

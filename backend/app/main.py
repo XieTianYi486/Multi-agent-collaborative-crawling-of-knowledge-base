@@ -44,6 +44,12 @@ async def lifespan(app: FastAPI):
     # 初始化默认数据（角色 + 管理员）
     _init_default_data()
 
+    # 安全自检：生产部署前必须修改默认密钥/密码（检测到默认值仅告警，不阻断启动）
+    if settings.JWT_SECRET_KEY == "jwt-secret-change-in-production":
+        print("[安全警告] JWT_SECRET_KEY 仍为默认值，任何人均可伪造登录 Token，请立即修改 .env！")
+    if settings.ADMIN_PASSWORD == "admin123":
+        print("[安全警告] 默认管理员密码仍为 admin123，请立即修改 .env 中的 ADMIN_PASSWORD！")
+
     print(f"[启动] 服务就绪，监听 {settings.HOST}:{settings.PORT}")
     yield
     # 关闭时
@@ -211,7 +217,8 @@ def _init_default_data():
                 role_id=admin_role.id,
             )
             db.add(admin)
-            print(f"[启动] 已创建默认管理员: {settings.ADMIN_USERNAME} / {settings.ADMIN_PASSWORD}")
+            # 不打印密码明文，避免启动日志泄露管理员凭据
+            print(f"[启动] 已创建默认管理员: {settings.ADMIN_USERNAME}（密码见 .env 配置）")
 
         db.commit()
 

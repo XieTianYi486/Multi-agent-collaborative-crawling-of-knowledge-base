@@ -252,7 +252,7 @@ async def ask_stream(
     db.close()
 
     # ── 流式数据收集器（在生成器和后台任务之间传递数据） ──
-    stream_result = {"full_answer": "", "sources": [], "ok": False, "status": "", "latency": {}}
+    stream_result = {"full_answer": "", "sources": [], "ok": False, "status": "", "latency": {}, "usage": {}}
 
     async def event_stream():
         """纯 SSE 流式生成器 —— 不涉及任何数据库操作"""
@@ -278,6 +278,7 @@ async def ask_stream(
                         stream_result["full_answer"] = event_data["answer"]
                     stream_result["status"] = event_data.get("status", "")
                     stream_result["latency"] = event_data.get("latency", {})
+                    stream_result["usage"] = event_data.get("usage", {})
 
                     # ── 敏感词脱敏（完成后对完整回答做合规过滤）──
                     masked = stream_result["full_answer"]
@@ -357,8 +358,8 @@ async def ask_stream(
                 retrieval_ms=latency.get("retrieval_ms", 0),
                 llm_ms=latency.get("llm_ms", 0),
                 total_ms=latency.get("total_ms", 0),
-                prompt_tokens=0,
-                completion_tokens=0,
+                prompt_tokens=stream_result.get("usage", {}).get("prompt_tokens", 0),
+                completion_tokens=stream_result.get("usage", {}).get("completion_tokens", 0),
             )
             save_db.add(chat_log)
 

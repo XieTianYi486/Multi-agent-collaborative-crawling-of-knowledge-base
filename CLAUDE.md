@@ -6,7 +6,7 @@
 - **项目类型**：多智能体协作爬取的专业知识库 + 向量检索问答（垂直 RAG）
 - **目标用户**：院校师生、知识库管理员、超级管理员
 - **部署方式**：私有化部署，支持完全内网运行
-- **数据存储**：SQLite（开发）/ MySQL（生产）+ ChromaDB 向量库 + 爬虫侧独立 SQLite
+- **数据存储**：SQLite（开发）/ MySQL（生产）+ ChromaDB 向量库（低版本 SQLite 自动降级 FAISS）+ 爬虫侧独立 SQLite
 - **知识域**：ESP32、树莓派、嵌入式开发、智能玩具等技术资料（多智能体流水线自动爬取入库，仅校内教学使用）
 - **核心原则**：只做事实资料检索，不做大模型微调训练；LLM 仅用于资料处理（打标/审核/摘要），问答严格基于入库资料，杜绝 AI 幻觉
 
@@ -45,6 +45,14 @@
 - 爬取中心（站点状态、流水线监控、LLM 成本、入库同步记录）
 - 系统配置热更新
 
+### 6. 扩展功能
+- **AI 导员**：独立校规知识库（独立向量/BM25 索引），双模式问答——知识命中按条款严格作答、未命中转人设陪伴并提示线下核实（防编造校规）；悬浮窗交互（可拖动、多轮会话、历史记录）
+- **开放 API**：`/openapi/v1` 命名空间，API Key（SHA-256 哈希存储）鉴权 + 调用方密级上限，供第三方系统对接检索/问答
+- **工单系统**：师生提交问题工单，管理员处理流转
+- **敏感词管理**：提问侧高危词拦截（审计留痕）+ 回答侧脱敏
+- **公告管理**：系统公告发布展示
+- **登录安全**：图形/算式验证码、连续失败锁定（5 次锁 15 分钟）、SSO 预留（企业微信/钉钉/飞书/Keycloak）
+
 ---
 
 ## 技术架构
@@ -74,10 +82,10 @@
 #### 后端 (backend/)
 | 类别 | 技术 | 说明 |
 |------|------|------|
-| 语言 | Python 3.10+ | AI/ML 生态最完善 |
+| 语言 | Python 3.9+ | 开发环境实测 3.9.1，代码兼容 3.9 语法 |
 | Web 框架 | FastAPI | 高性能异步，自动生成 API 文档 |
 | 数据库 ORM | SQLAlchemy 2.0 | 同步模式，支持 SQLite / MySQL |
-| 向量数据库 | ChromaDB | 嵌入式向量存储，自带持久化 |
+| 向量数据库 | ChromaDB / FAISS | ChromaDB 为主；SQLite < 3.35 时自动降级 FAISS（两后端分数语义统一） |
 | 关键词检索 | rank-bm25 | 轻量 BM25 算法实现 |
 | LLM 接入 | 阿里云百炼 DashScope | 通义千问系列模型 |
 | 文档解析 | PyMuPDF / python-docx / openpyxl | 多格式文档解析 |
@@ -135,8 +143,6 @@ Multi-agent collaborative crawling of knowledge base/
 │   │   │   ├── prompts/         # Prompt 模板
 │   │   │   ├── reranker/        # 重排序
 │   │   │   └── ingestion.py     # 文档入库流程
-│   │   ├── eval/             # 评测集与实验（74 道 QA + run_eval.py，论文第 6 章）
-│   │   ├── tests/            # 单元测试
 │   │   └── main.py           # 应用入口
 │   ├── crawler/              # 多智能体爬取子系统（独立批处理包，与 app/ 解耦）
 │   │   ├── config/              # sites.yaml 站点档案 + models.yaml 模型档位 + prompts/
@@ -151,6 +157,8 @@ Multi-agent collaborative crawling of knowledge base/
 │   ├── data/                 # SQLite 数据文件
 │   ├── cache/                # 磁盘缓存
 │   ├── uploads/              # 上传的文档文件
+│   ├── eval/                 # 评测集与实验（74 道 QA + run_eval.py，论文第 6 章）
+│   ├── tests/                # 单元测试（爬虫/敏感词/OCR/拒答一致性/评测集校验）
 │   ├── requirements.txt
 │   ├── run_crawl_daily.py    # 每日爬取流水线入口（Windows 任务计划调用）
 │   ├── register_crawl_task.bat # 注册每日爬取任务计划
@@ -189,7 +197,7 @@ Multi-agent collaborative crawling of knowledge base/
 ## 🚀 如何运行
 
 ### 环境准备
-- Python 3.10+
+- Python 3.9+（开发环境实测 3.9.1）
 - Node.js 18+
 - 阿里云百炼 API Key（DashScope）
 
@@ -272,7 +280,7 @@ register_crawl_task.bat                  # 注册 Windows 任务计划（每日 
 | 前端端口 | 5173 | Vite 开发服务器 |
 | 向量维度 | 1536 | DashScope text-embedding-v2 |
 | 分块大小 | 512 token | 语义分块 |
-| 召回 Top-K | 10 | 混合检索召回数量 |
+| 召回 Top-K | 向量/BM25 各 20 → 融合 50 → 重排 5 | 混合检索三级漏斗 |
 | JWT 过期 | 24h | Token 有效期 |
 
 ---
@@ -296,4 +304,9 @@ register_crawl_task.bat                  # 注册 Windows 任务计划（每日 
 | GET | /api/v1/crawler/usage | LLM 成本账本 |
 | POST | /api/v1/crawler/run | 手动触发爬取流水线（后台线程） |
 | GET | /api/v1/crawler/run | 流水线运行状态 |
+| POST | /api/v1/counselor/ask | AI 导员问答（同步） |
+| POST | /api/v1/counselor/stream | AI 导员问答（SSE 流式） |
+| GET | /api/v1/counselor/sessions | 导员会话列表 |
+| POST | /openapi/v1/search | 开放 API 知识片段检索（API Key 鉴权） |
+| POST | /openapi/v1/ask | 开放 API 知识库问答（API Key 鉴权） |
 | GET | /api/health | 健康检查 |
