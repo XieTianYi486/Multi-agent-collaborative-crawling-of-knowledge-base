@@ -153,4 +153,12 @@ def _migrate_add_columns(engine):
                 "ALTER TABLE departments ADD COLUMN dept_type TEXT DEFAULT 'teaching'"
             )
 
+        # counselor_kb_chunks 表追加密级字段（导员知识库条款）
+        kb_result = conn.exec_driver_sql("PRAGMA table_info(counselor_kb_chunks)")
+        kb_cols = {row[1] for row in kb_result}
+        if "security_level" not in kb_cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE counselor_kb_chunks ADD COLUMN security_level INTEGER DEFAULT 1"
+            )
+
         conn.commit()

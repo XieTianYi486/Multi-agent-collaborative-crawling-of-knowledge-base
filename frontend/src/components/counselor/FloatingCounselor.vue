@@ -44,6 +44,93 @@
           </div>
         </header>
 
+        <!-- 学分绩点计算器：确定性换算，不经过模型生成，结果可复现 -->
+        <transition name="cp-fade">
+          <div v-if="gpaOpen" class="cp-gpa">
+            <div class="cp-gpa-head">
+              <button class="cp-gpa-back" title="返回对话" @click="gpaOpen = false">
+                <el-icon><ArrowLeft /></el-icon>
+              </button>
+              <span class="cp-gpa-title">学分绩点计算器</span>
+            </div>
+
+            <div class="cp-gpa-body">
+              <p class="cp-gpa-tip">
+                按《学分制教学管理制度》换算：百分制、五级制自动折算计点，课程学分绩点 = 绩点 × 学分。
+              </p>
+
+              <div v-for="(r, i) in gpaRows" :key="r.id" class="cp-gpa-row">
+                <div class="cp-gpa-row-top">
+                  <input v-model="r.name" class="cp-gpa-name" type="text" :placeholder="`课程 ${i + 1}`" />
+                  <button class="cp-gpa-del" title="删除该课程" @click="removeGpaRow(r.id)">
+                    <el-icon><Delete /></el-icon>
+                  </button>
+                </div>
+                <div class="cp-gpa-row-bottom">
+                  <input
+                    v-model="r.credit"
+                    class="cp-gpa-num"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    placeholder="学分"
+                  />
+                  <select v-model="r.type" class="cp-gpa-sel">
+                    <option value="percent">百分制</option>
+                    <option value="grade">五级制</option>
+                    <option value="pass">通过</option>
+                  </select>
+                  <select v-if="r.type === 'grade'" v-model="r.score" class="cp-gpa-sel score">
+                    <option value="A">A 优秀</option>
+                    <option value="B">B 良好</option>
+                    <option value="C">C 中等</option>
+                    <option value="D">D 及格</option>
+                    <option value="E">E 不及格</option>
+                  </select>
+                  <input
+                    v-else-if="r.type === 'percent'"
+                    v-model="r.score"
+                    class="cp-gpa-num score"
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="成绩"
+                  />
+                  <span v-else class="cp-gpa-pass">不计入</span>
+                  <span class="cp-gpa-point">{{ pointLabel(r) }}</span>
+                  <label class="cp-gpa-inc" title="劳动教育、通识选修、思政实践、毕业实习与毕业论文不计入">
+                    <input v-model="r.included" type="checkbox" />计入
+                  </label>
+                </div>
+              </div>
+
+              <button class="cp-gpa-add" @click="addGpaRow">+ 添加课程</button>
+            </div>
+
+            <div class="cp-gpa-foot">
+              <div class="cp-gpa-stat">
+                <span>学分绩点之和</span>
+                <strong>{{ fmt(gpaResult.sumPoint) }}</strong>
+              </div>
+              <div class="cp-gpa-stat">
+                <span>学分之和</span>
+                <strong>{{ fmt(gpaResult.sumCredit) }}</strong>
+              </div>
+              <div class="cp-gpa-final">
+                <span class="cp-gpa-final-label">平均学分绩点</span>
+                <strong class="cp-gpa-final-value" :class="{ warn: gpaResult.hasData && gpaResult.gpa < 2 }">
+                  {{ gpaResult.hasData ? gpaResult.gpa.toFixed(2) : '—' }}
+                </strong>
+              </div>
+              <p v-if="gpaResult.hasData" class="cp-gpa-warn" :class="{ warn: gpaResult.gpa < 2 }">
+                {{ gpaResult.gpa < 2
+                  ? '低于 2.0 学位线：1-6 学期处于该水平会触发学位预警，且不授予学士学位'
+                  : '已达到 2.0 学位线' }}
+              </p>
+            </div>
+          </div>
+        </transition>
+
         <!-- 历史会话 -->
         <transition name="cp-fade">
           <div v-if="showHistory" class="cp-history">
@@ -76,6 +163,16 @@
                 {{ q }}
               </button>
             </div>
+            <div class="cp-welcome-tools">
+              <button class="cp-quick-refresh" title="换一批问题" @click="refreshPrompts">
+                <el-icon :class="{ spinning: refreshing }"><Refresh /></el-icon>
+                <span>换一批</span>
+              </button>
+              <button class="cp-quick-refresh" title="按学校规则计算学分绩点" @click="gpaOpen = true">
+                <el-icon><DataAnalysis /></el-icon>
+                <span>绩点计算器</span>
+              </button>
+            </div>
           </div>
 
           <div v-for="m in messages" :key="m.id" class="cp-row" :class="m.role">
@@ -83,12 +180,32 @@
               <span v-if="m.role === 'assistant' && m.mode" class="cp-mode-tag" :class="m.mode">
                 {{ m.mode === 'knowledge' ? '依据校规' : '陪伴模式' }}
               </span>
-              <div class="cp-text">{{ m.content }}</div>
+              <!-- 导员回答是 Markdown（含表格/加粗/分点），需渲染后展示，否则原文符号会直接暴露给用户 -->
+              <div class="cp-text" v-html="renderMarkdown(m.content)"></div>
               <div v-if="m.sources && m.sources.length" class="cp-sources">
-                <div class="cp-sources-title">参考条款</div>
-                <div v-for="(s, i) in m.sources" :key="i" class="cp-source">
-                  <span class="cp-source-dot"></span>
-                  <span>《{{ s.source_title }}》{{ s.article_no }}</span>
+                <div class="cp-sources-title">参考条款（点击展开原文）</div>
+                <div
+                  v-for="(s, i) in m.sources"
+                  :key="i"
+                  class="cp-source"
+                  :class="{ open: isSourceOpen(m.id, i) }"
+                >
+                  <button class="cp-source-head" @click="toggleSource(m.id, i)">
+                    <span class="cp-source-dot"></span>
+                    <span class="cp-source-label">《{{ s.source_title }}》{{ s.article_no }}</span>
+                    <span class="cp-source-arrow">▾</span>
+                  </button>
+                  <div v-if="isSourceOpen(m.id, i)" class="cp-source-text">
+                    {{ s.snippet || '暂无原文片段' }}
+                    <a
+                      v-if="isHttpUrl(s.source_url)"
+                      :href="s.source_url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="cp-source-link"
+                      @click.stop
+                    >查看原文 ↗</a>
+                  </div>
                 </div>
               </div>
             </div>
@@ -96,7 +213,7 @@
 
           <div v-if="streaming" class="cp-row assistant">
             <div class="cp-bubble">
-              <div v-if="streamContent" class="cp-text">{{ streamContent }}</div>
+              <div v-if="streamContent" class="cp-text" v-html="renderMarkdown(streamContent)"></div>
               <div v-else class="cp-typing"><i></i><i></i><i></i></div>
             </div>
           </div>
@@ -130,9 +247,132 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { Close, Plus, Clock, Delete, Promotion } from '@element-plus/icons-vue'
+import { Close, Plus, Clock, Delete, Promotion, Refresh, ArrowLeft, DataAnalysis } from '@element-plus/icons-vue'
+import MarkdownIt from 'markdown-it'
 import { counselorApi, counselorStream } from '@/api/counselor'
 import type { CounselorSource, CounselorSession } from '@/api/counselor'
+
+// html: false —— 禁止原始 HTML 透传，避免模型输出带标签时触发 XSS
+const md = new MarkdownIt({ breaks: true, linkify: true, html: false })
+
+function renderMarkdown(text: string) {
+  return md.render(text || '')
+}
+
+// 参考条款展开状态：key 为 `${消息id}:${条款序号}`，仅记录已展开的条目
+const expandedSources = ref<Set<string>>(new Set())
+
+function isSourceOpen(messageId: number, index: number) {
+  return expandedSources.value.has(`${messageId}:${index}`)
+}
+
+function toggleSource(messageId: number, index: number) {
+  const key = `${messageId}:${index}`
+  if (expandedSources.value.has(key)) expandedSources.value.delete(key)
+  else expandedSources.value.add(key)
+}
+
+/** source_url 可能是网址，也可能是"某某部门文件（2025年8月）"这类说明文字，只有真网址才渲染成链接 */
+function isHttpUrl(url?: string | null) {
+  return !!url && /^https?:\/\//i.test(url.trim())
+}
+
+/* ================= 学分绩点计算器 ================= */
+
+type GpaScoreType = 'percent' | 'grade' | 'pass'
+
+interface GpaRow {
+  id: number
+  name: string
+  credit: string
+  type: GpaScoreType
+  score: string
+  included: boolean
+}
+
+const gpaOpen = ref(false)
+let gpaSeq = 0
+
+function makeGpaRow(): GpaRow {
+  return { id: ++gpaSeq, name: '', credit: '', type: 'percent', score: '', included: true }
+}
+
+const gpaRows = ref<GpaRow[]>([makeGpaRow(), makeGpaRow(), makeGpaRow()])
+
+function addGpaRow() {
+  gpaRows.value.push(makeGpaRow())
+}
+
+function removeGpaRow(id: number) {
+  gpaRows.value = gpaRows.value.filter((r) => r.id !== id)
+}
+
+/** 五级制折算（《学分制教学管理制度》第六条） */
+const GRADE_POINTS: Record<string, number> = { A: 4.0, B: 3.0, C: 2.0, D: 1.0, E: 0 }
+
+/** 百分制分段折算（第五条）：从高到低命中第一个区间 */
+const PERCENT_STEPS: Array<[number, number]> = [
+  [85, 3.5],
+  [80, 3.0],
+  [75, 2.5],
+  [70, 2.0],
+  [65, 1.5],
+  [60, 1.0],
+]
+
+function pointOf(row: GpaRow): number | null {
+  if (row.type === 'pass') return null
+  if (row.type === 'grade') return GRADE_POINTS[row.score] ?? null
+  const score = Number(row.score)
+  if (row.score === '' || !Number.isFinite(score)) return null
+  if (score >= 90) return 4.0
+  for (const [min, point] of PERCENT_STEPS) {
+    if (score >= min) return point
+  }
+  return 0
+}
+
+function pointLabel(row: GpaRow) {
+  const point = pointOf(row)
+  return point === null ? '—' : `绩点 ${point.toFixed(1)}`
+}
+
+/**
+ * 平均学分绩点 = 学分绩点之和 ÷ 学分之和（第七条）。
+ * "通过"性质课程与手动取消"计入"的课程（劳动教育/通识选修/思政实践/毕业实习与论文，第八条）不参与计算。
+ */
+const gpaResult = computed(() => {
+  let sumPoint = 0
+  let sumCredit = 0
+  for (const row of gpaRows.value) {
+    if (!row.included) continue
+    const credit = Number(row.credit)
+    const point = pointOf(row)
+    if (row.credit === '' || !Number.isFinite(credit) || credit <= 0 || point === null) continue
+    sumPoint += point * credit
+    sumCredit += credit
+  }
+  return {
+    sumPoint,
+    sumCredit,
+    gpa: sumCredit > 0 ? sumPoint / sumCredit : 0,
+    hasData: sumCredit > 0,
+  }
+})
+
+/** 去掉浮点尾差，整数不带小数点 */
+function fmt(n: number) {
+  return String(Math.round(n * 100) / 100)
+}
+
+/**
+ * 仅在用户给出具体成绩数据时判定为"要我算"。
+ * 像"平均学分绩点怎么算""绩点低于多少拿不到学位"这类规则询问，仍走知识库问答。
+ */
+function isGpaCalcRequest(question: string) {
+  if (!/(学分绩点|平均绩点|绩点|GPA)/i.test(question)) return false
+  return /\d+\s*(分|学分)/.test(question) || /[ABCDE]\s*(优秀|良好|中等|及格|不及格)/.test(question)
+}
 
 // 导员形象（静态资源，置于 public 目录，避免为图片导入引入额外类型声明）
 const counselorAvatar = '/counselor-avatar.jpeg'
@@ -290,12 +530,52 @@ onUnmounted(() => {
 let controller: AbortController | null = null
 let seq = 0
 
-const quickPrompts = [
+/** 预设问题池：每次随机抽 4 条展示，点"换一批"重新抽取，避免只看到固定几条 */
+const QUICK_POOL = [
   '旷课多少学时会被处分？',
   '论文抄袭会怎么处理？',
-  '宿舍能不能养猫？',
-  '我最近心情不太好…',
+  '考试作弊会受到什么处分？',
+  '迟到早退怎么算旷课？',
+  '取消考试资格是什么情况？',
+  '补考和重修有什么区别？',
+  '挂科太多会被降级吗？',
+  '毕业需要满足哪些条件？',
+  '平均学分绩点怎么算？',
+  '绩点低于多少拿不到学位证？',
+  '3学分80分、2学分优秀，绩点怎么算？',
+  '创新学分要修满多少才能毕业？',
+  '国家奖学金一年多少钱？',
+  '国家助学金怎么申请？',
+  '什么情况下不授予学士学位？',
+  '转学需要满足什么条件？',
+  '平均学分绩点会算哪些课程？',
 ]
+
+const QUICK_COUNT = 4
+
+/** Fisher-Yates 洗牌后取前 N 条，保证每次分布均匀且不重复 */
+function pickPrompts(): string[] {
+  const pool = [...QUICK_POOL]
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  return pool.slice(0, QUICK_COUNT)
+}
+
+const quickPrompts = ref<string[]>(pickPrompts())
+const refreshing = ref(false)
+
+/** 换一批：重新抽取；若与原集合完全重合则再抽一次，避免点了没变化 */
+function refreshPrompts() {
+  const before = quickPrompts.value.join('|')
+  let next = pickPrompts()
+  if (next.join('|') === before) next = pickPrompts()
+  quickPrompts.value = next
+
+  refreshing.value = true
+  setTimeout(() => (refreshing.value = false), 400)
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -390,6 +670,7 @@ function newChat() {
   notice.value = ''
   errorMsg.value = ''
   showHistory.value = false
+  gpaOpen.value = false
 }
 
 function askQuick(q: string) {
@@ -407,6 +688,21 @@ function send() {
   notice.value = ''
   errorMsg.value = ''
   messages.value.push({ id: ++seq, role: 'user', content: question })
+
+  // 算绩点是确定性计算，交给模型心算容易在分段换算和排除规则上出错，
+  // 因此直接打开计算器，不发起 LLM 请求（也就不必等十几秒）
+  if (isGpaCalcRequest(question)) {
+    gpaOpen.value = true
+    messages.value.push({
+      id: ++seq,
+      role: 'assistant',
+      content: '这类换算交给计算器最稳妥～把每门课的学分和成绩填进去，会按学校规则自动折算，并直接算出平均学分绩点。\n\n注意：劳动教育、通识选修、思政实践、毕业实习与毕业论文，以及“通过”性质的课程不计入。',
+      mode: null,
+      sources: null,
+    })
+    scrollToBottom()
+    return
+  }
 
   streaming.value = true
   streamContent.value = ''
@@ -734,6 +1030,255 @@ function stop() {
   border-color: var(--color-primary, #4f46e5);
   transform: translateY(-1px);
 }
+/* 换一批：弱化的文字按钮，不与问题胶囊抢视觉焦点 */
+.cp-quick-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary, #8a90a8);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.cp-quick-refresh:hover {
+  color: var(--color-primary, #4f46e5);
+  background: var(--color-primary-light, rgba(79, 70, 229, 0.08));
+}
+.cp-quick-refresh .el-icon {
+  font-size: 13px;
+  transition: transform 0.4s ease;
+}
+.cp-quick-refresh .el-icon.spinning {
+  transform: rotate(360deg);
+}
+
+/* 首屏工具行：换一批 + 绩点计算器 */
+.cp-welcome-tools {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+.cp-welcome-tools .cp-quick-refresh {
+  margin-top: 10px;
+}
+
+/* ================= 学分绩点计算器 ================= */
+.cp-gpa {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-page, #f6f7fb);
+}
+.cp-gpa-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--color-bg-card, #fff);
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  flex-shrink: 0;
+}
+.cp-gpa-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-bg-hover, rgba(79, 70, 229, 0.08));
+  color: var(--color-text-secondary, #6b7290);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.cp-gpa-back:hover {
+  color: var(--color-primary, #4f46e5);
+}
+.cp-gpa-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1f2333);
+}
+.cp-gpa-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cp-gpa-body::-webkit-scrollbar { width: 6px; }
+.cp-gpa-body::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 3px;
+}
+.cp-gpa-tip {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--color-text-secondary, #6b7290);
+}
+.cp-gpa-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+.cp-gpa-row-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cp-gpa-row-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cp-gpa-name,
+.cp-gpa-num,
+.cp-gpa-sel {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  background: var(--color-bg-page, #f6f7fb);
+  color: var(--color-text-primary, #1f2333);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.18s ease;
+}
+.cp-gpa-name:focus,
+.cp-gpa-num:focus,
+.cp-gpa-sel:focus {
+  border-color: var(--color-primary, #4f46e5);
+}
+.cp-gpa-name {
+  flex: 1;
+  min-width: 0;
+}
+.cp-gpa-num { width: 62px; }
+.cp-gpa-num.score,
+.cp-gpa-sel.score { width: 76px; }
+.cp-gpa-sel { width: 78px; }
+/* 数字输入框去掉原生上下箭头，避免窄行里挤占空间 */
+.cp-gpa-num::-webkit-outer-spin-button,
+.cp-gpa-num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.cp-gpa-num { -moz-appearance: textfield; }
+.cp-gpa-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary, #6b7290);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.cp-gpa-del:hover {
+  color: #e0533d;
+  background: rgba(224, 83, 61, 0.08);
+}
+.cp-gpa-point {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-primary, #4f46e5);
+  white-space: nowrap;
+}
+.cp-gpa-inc {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--color-text-secondary, #6b7290);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cp-gpa-pass {
+  width: 76px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-text-secondary, #6b7290);
+}
+.cp-gpa-add {
+  height: 34px;
+  border: 1px dashed var(--color-border, rgba(0, 0, 0, 0.16));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary, #6b7290);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.cp-gpa-add:hover {
+  border-color: var(--color-primary, #4f46e5);
+  color: var(--color-primary, #4f46e5);
+}
+.cp-gpa-foot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-card, #fff);
+  flex-shrink: 0;
+}
+.cp-gpa-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--color-text-secondary, #6b7290);
+}
+.cp-gpa-stat strong {
+  font-size: 14px;
+  color: var(--color-text-primary, #1f2333);
+  font-variant-numeric: tabular-nums;
+}
+.cp-gpa-final {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border, rgba(0, 0, 0, 0.12));
+}
+.cp-gpa-final-label {
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7290);
+}
+.cp-gpa-final-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-primary, #4f46e5);
+  font-variant-numeric: tabular-nums;
+}
+.cp-gpa-final-value.warn { color: #e0533d; }
+.cp-gpa-warn {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--color-text-secondary, #6b7290);
+}
+.cp-gpa-warn.warn { color: #e0533d; }
 
 /* 气泡 */
 .cp-row { display: flex; }
@@ -761,7 +1306,64 @@ function stop() {
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.07));
   border-bottom-left-radius: 4px;
 }
-.cp-text { white-space: pre-wrap; }
+.cp-text { white-space: normal; }
+/* Markdown 渲染后的排版（v-html 内容需 :deep 才能命中 scoped 样式） */
+.cp-text :deep(p) { margin: 0 0 8px; }
+.cp-text :deep(p:last-child) { margin-bottom: 0; }
+.cp-text :deep(ul),
+.cp-text :deep(ol) { margin: 4px 0 8px; padding-left: 18px; }
+.cp-text :deep(li) { margin: 2px 0; }
+.cp-text :deep(strong) { font-weight: 600; }
+.cp-text :deep(h1),
+.cp-text :deep(h2),
+.cp-text :deep(h3),
+.cp-text :deep(h4) {
+  margin: 10px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.cp-text :deep(h1:first-child),
+.cp-text :deep(h2:first-child),
+.cp-text :deep(h3:first-child) { margin-top: 0; }
+/* 表格：窄气泡里容易撑破，改为可横向滚动的块级容器 */
+.cp-text :deep(table) {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.cp-text :deep(th),
+.cp-text :deep(td) {
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+.cp-text :deep(th) {
+  background: var(--color-bg-hover, rgba(79, 70, 229, 0.06));
+  font-weight: 600;
+}
+.cp-text :deep(code) {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--color-bg-hover, rgba(79, 70, 229, 0.08));
+  font-size: 12px;
+}
+.cp-text :deep(blockquote) {
+  margin: 8px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid var(--color-border, rgba(79, 70, 229, 0.25));
+  color: var(--color-text-secondary, #6b7290);
+}
+.cp-text :deep(a) { color: var(--color-primary, #4f46e5); }
+.cp-text :deep(hr) {
+  margin: 10px 0;
+  border: none;
+  border-top: 1px dashed var(--color-border, rgba(0, 0, 0, 0.12));
+}
 
 .cp-mode-tag {
   display: inline-block;
@@ -792,13 +1394,58 @@ function stop() {
   margin-bottom: 5px;
 }
 .cp-source {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
   font-size: 12px;
   color: var(--color-text-secondary, #6b7290);
   line-height: 1.9;
 }
+/* 条款标题行做成按钮：整行可点，展开原文 */
+.cp-source-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cp-source-head:hover { color: var(--color-primary, #4f46e5); }
+.cp-source-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-source-arrow {
+  flex-shrink: 0;
+  font-size: 10px;
+  opacity: 0.55;
+  transition: transform 0.18s ease;
+}
+.cp-source.open .cp-source-arrow { transform: rotate(180deg); }
+.cp-source-text {
+  margin: 2px 0 8px 11px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--color-bg-hover, rgba(79, 70, 229, 0.05));
+  color: var(--color-text-body, #3b3f52);
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cp-source-link {
+  display: inline-block;
+  margin-left: 4px;
+  color: var(--color-primary, #4f46e5);
+  text-decoration: none;
+}
+.cp-source-link:hover { text-decoration: underline; }
 .cp-source-dot {
   width: 5px;
   height: 5px;
