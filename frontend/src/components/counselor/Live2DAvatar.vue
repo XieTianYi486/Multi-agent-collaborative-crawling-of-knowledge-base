@@ -21,6 +21,11 @@ const containerRef = ref<HTMLDivElement | null>(null)
 const loaded = ref(false)
 const failed = ref(false)
 
+// 移动端 / 触屏设备不加载 WebGL 模型：pixi + Live2D 在手机上功耗高、掉帧明显，
+// 直接使用静态头像保证面板交互流畅
+const useStatic = typeof window !== 'undefined'
+  && (window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768)
+
 let app: any = null
 let model: any = null
 let mouthValue = 0  // 当前嘴型张开度（0~1）
@@ -85,7 +90,7 @@ function stopMouthAnimation() {
 }
 
 async function init() {
-  if (!containerRef.value || loaded.value || failed.value) return
+  if (useStatic || !containerRef.value || loaded.value || failed.value) return
   try {
     // 1. 先加载 Cubism Core SDK
     await loadCubismCore()
@@ -183,9 +188,9 @@ onBeforeUnmount(cleanup)
 
 <template>
   <div class="live2d-wrap" :style="{ width: width + 'px', height: height + 'px' }">
-    <div v-if="!failed" ref="containerRef" class="live2d-canvas"></div>
-    <img v-if="failed && fallback" :src="fallback" class="live2d-fallback" alt="AI 导员" />
-    <div v-if="!loaded && !failed" class="live2d-loading">…</div>
+    <div v-if="!failed && !useStatic" ref="containerRef" class="live2d-canvas"></div>
+    <img v-if="(failed || useStatic) && fallback" :src="fallback" class="live2d-fallback" alt="AI 导员" />
+    <div v-if="!loaded && !failed && !useStatic" class="live2d-loading">…</div>
   </div>
 </template>
 

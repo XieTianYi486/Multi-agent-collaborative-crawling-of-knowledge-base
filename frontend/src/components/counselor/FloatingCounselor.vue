@@ -284,7 +284,7 @@
             rows="1"
             placeholder="和导员说说你的心事或疑问…"
             @input="autoResizeInput"
-            @keydown.enter.exact.prevent="send"
+            @keydown.enter.exact="onEnter"
           />
           <button v-if="streaming" class="cp-send stop" title="停止" @click="stop">
             <el-icon><Close /></el-icon>
@@ -633,6 +633,26 @@ function closeVoiceMenu(e: MouseEvent) {
   if (!target.closest('.cp-voice-wrap')) voiceMenuOpen.value = false
 }
 
+// ==================== 移动端适配 ====================
+const MOBILE_MAX_WIDTH = 768
+const isMobile = ref(false)
+// iOS 键盘弹出时 visualViewport 会收缩，需要把底部面板抬到键盘上方
+const keyboardOffset = ref(0)
+
+function updateViewportMode() {
+  isMobile.value = window.innerWidth <= MOBILE_MAX_WIDTH
+}
+
+function syncKeyboardOffset() {
+  const vv = window.visualViewport
+  if (!isMobile.value || !vv) {
+    keyboardOffset.value = 0
+    return
+  }
+  // 键盘高度 ≈ 布局视口高度 - 可视视口高度 - 可视视口顶部偏移
+  keyboardOffset.value = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+}
+
 // ==================== 拖动 ====================
 const FAB_SIZE = 58      // 悬浮按钮边长
 const PANEL_GAP = 14     // 面板与按钮之间的间距
@@ -653,12 +673,31 @@ const fabPos = ref({
 })
 const panelPos = ref({ x: 0, y: 0 })
 
-const fabStyle = computed(() => ({ left: `${fabPos.value.x}px`, top: `${fabPos.value.y}px` }))
-const panelStyle = computed(() => ({ left: `${panelPos.value.x}px`, top: `${panelPos.value.y}px` }))
+// 移动端交给 CSS 定位（FAB 固定右下、面板固定底部），避免拖拽坐标与安全区打架
+const fabStyle = computed(() => (isMobile.value
+  ? {}
+  : { left: `${fabPos.value.x}px`, top: `${fabPos.value.y}px` }))
+
+const panelStyle = computed(() => {
+  if (!isMobile.value) {
+    return { left: `${panelPos.value.x}px`, top: `${panelPos.value.y}px` }
+  }
+  // 键盘弹出时整体上移并同步压缩高度，保证输入框不被键盘遮挡；
+  // 键盘收起时把高度交还给 CSS，便于横竖屏使用不同高度
+  const offset = keyboardOffset.value
+  return offset > 0
+    ? { bottom: `${offset}px`, height: `calc(80dvh - ${offset}px)` }
+    : { bottom: '0px' }
+})
 
 let movedDistance = 0 // 本次指针交互累计位移，用于区分点击与拖动
 
 function startDrag(e: PointerEvent, target: 'fab' | 'panel') {
+  // 移动端 FAB 固定右下、面板为底部抽屉，均不参与拖拽
+  if (isMobile.value) {
+    movedDistance = 0
+    return
+  }
   const el = target === 'fab' ? fabEl.value : panelEl.value
   if (!el || e.button !== 0) return
 
@@ -739,27 +778,46 @@ function onHeadDown(e: PointerEvent) {
 }
 
 function onWindowResize() {
+  updateViewportMode()
+  syncKeyboardOffset()
+  if (isMobile.value) return
   fabPos.value = {
     x: clamp(fabPos.value.x, window.innerWidth - FAB_SIZE - EDGE_MARGIN),
     y: clamp(fabPos.value.y, window.innerHeight - FAB_SIZE - EDGE_MARGIN),
   }
   if (open.value && panelEl.value) {
-    const w = panelEl.value.offsetWidth
-    const h = panelEl.value.offsetHeight
-    panelPos.value = {
-      x: clamp(panelPos.value.x, window.innerWidth - w - EDGE_MARGIN),
-      y: clamp(panelPos.value.y, window.innerHeight - h - EDGE_MARGIN),
-    }
+    // 等 CSS 断点切换完成后再读取尺寸，避免沿用移动端底部抽屉的宽高
+    requestAnimationFrame(() => {
+      if (!panelEl.value || isMobile.value) return
+      const w = panelEl.value.offsetWidth
+      const h = panelEl.value.offsetHeight
+      // panelPos 为 0 表示此前处于移动端抽屉模式、尚未初始化桌面坐标，按 FAB 重新吸附
+      const baseX = panelPos.value.x || fabPos.value.x + FAB_SIZE - w
+      const baseY = panelPos.value.y || fabPos.value.y - PANEL_GAP - h
+      panelPos.value = {
+        x: clamp(baseX, window.innerWidth - w - EDGE_MARGIN),
+        y: clamp(baseY, window.innerHeight - h - EDGE_MARGIN),
+      }
+    })
   }
 }
 
 onMounted(() => {
+  updateViewportMode()
+  syncKeyboardOffset()
   window.addEventListener('resize', onWindowResize)
+  window.addEventListener('orientationchange', onWindowResize)
+  // visualViewport 变化用于感知移动端软键盘弹出/收起
+  window.visualViewport?.addEventListener('resize', syncKeyboardOffset)
+  window.visualViewport?.addEventListener('scroll', syncKeyboardOffset)
   document.addEventListener('click', closeVoiceMenu)
   autoResizeInput()
 })
 onUnmounted(() => {
   window.removeEventListener('resize', onWindowResize)
+  window.removeEventListener('orientationchange', onWindowResize)
+  window.visualViewport?.removeEventListener('resize', syncKeyboardOffset)
+  window.visualViewport?.removeEventListener('scroll', syncKeyboardOffset)
   document.removeEventListener('click', closeVoiceMenu)
   document.body.classList.remove('cp-dragging')
   stopSpeak()
@@ -838,12 +896,14 @@ function autoResizeInput() {
 async function openPanel() {
   open.value = true
   await nextTick()
-  // 面板吸附在按钮的左上方（右边缘对齐），整体拖到哪就从哪里展开
-  const w = panelEl.value?.offsetWidth || 390
-  const h = panelEl.value?.offsetHeight || 580
-  panelPos.value = {
-    x: clamp(fabPos.value.x + FAB_SIZE - w, window.innerWidth - w - EDGE_MARGIN),
-    y: clamp(fabPos.value.y - PANEL_GAP - h, window.innerHeight - h - EDGE_MARGIN),
+  // 桌面端面板吸附在按钮左上方（右边缘对齐）；移动端由 CSS 固定在底部，无需计算坐标
+  if (!isMobile.value) {
+    const w = panelEl.value?.offsetWidth || 390
+    const h = panelEl.value?.offsetHeight || 580
+    panelPos.value = {
+      x: clamp(fabPos.value.x + FAB_SIZE - w, window.innerWidth - w - EDGE_MARGIN),
+      y: clamp(fabPos.value.y - PANEL_GAP - h, window.innerHeight - h - EDGE_MARGIN),
+    }
   }
   loadSessions()
   loadEdgeVoices()
@@ -918,6 +978,13 @@ function newChat() {
 
 function askQuick(q: string) {
   input.value = q
+  send()
+}
+
+/** 回车发送；移动端中文输入法组词过程中的回车不触发发送 */
+function onEnter(e: KeyboardEvent) {
+  if (e.isComposing) return
+  e.preventDefault()
   send()
 }
 
@@ -1886,11 +1953,91 @@ function stop() {
 .cp-fade-enter-active, .cp-fade-leave-active { transition: opacity 0.18s ease; }
 .cp-fade-enter-from, .cp-fade-leave-to { opacity: 0; }
 
-/* 移动端适配（定位由拖动逻辑以 left/top 内联控制） */
-@media (max-width: 640px) {
+/* ================= 移动端：底部抽屉 ================= */
+@media (max-width: 768px) {
+  /* 入口固定右下，抬到聊天输入区上方，避开 iOS 底部安全区；移动端不可拖动 */
+  .cp-fab {
+    left: auto;
+    top: auto;
+    right: 12px;
+    bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+    width: 52px;
+    height: 52px;
+  }
+  .cp-fab-core { width: 52px; height: 52px; }
+  .cp-fab-tip { display: none; }
+
+  /* 面板改为贴底抽屉，定位由 CSS 接管 */
   .cp-panel {
-    width: calc(100vw - 24px);
-    height: 68vh;
+    left: 0;
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    height: 82vh;
+    height: 82dvh;
+    max-height: 82dvh;
+    border-radius: 18px 18px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: 0 -10px 40px rgba(24, 26, 54, 0.28);
+    /* 移动端 GPU 上毛玻璃开销大，改用纯色背景 */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .cp-head {
+    padding: 12px 8px 12px 14px;
+    cursor: default;
+    touch-action: auto;
+  }
+  .cp-avatar { width: 52px; height: 66px; border-radius: 10px; }
+  .cp-sub { display: none; }
+  .cp-actions { gap: 0; }
+  .cp-icon-btn { width: 34px; height: 34px; }
+  /* 音色菜单锚定右侧，避免在窄屏上向右溢出 */
+  .cp-voice-menu { left: auto; right: 0; }
+
+  .cp-history { max-height: 35vh; }
+  /* 触屏没有 hover，删除按钮必须常显 */
+  .cp-history-del { opacity: 1; }
+
+  .cp-body {
+    padding: 12px 10px;
+    gap: 10px;
+    overscroll-behavior: contain;
+  }
+  .cp-welcome-text { font-size: 14px; }
+  .cp-bubble { max-width: 90%; font-size: 14px; }
+
+  .cp-foot {
+    gap: 6px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  /* iOS 输入框字号小于 16px 会自动放大整个页面 */
+  .cp-input,
+  .cp-gpa-name,
+  .cp-gpa-num,
+  .cp-gpa-sel {
+    font-size: 16px;
+  }
+  .cp-input { min-height: 44px; }
+  .cp-gpa-name,
+  .cp-gpa-num,
+  .cp-gpa-sel { height: 36px; }
+  /* 放大后的控件放不进一行，允许换行避免横向溢出 */
+  .cp-gpa-row-bottom { flex-wrap: wrap; }
+  .cp-gpa-point { margin-left: 0; }
+  .cp-gpa-foot { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* 手机横屏：高度优先，铺满整个可视区 */
+@media (max-width: 768px) and (orientation: landscape) {
+  .cp-panel {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
   }
 }
 </style>
