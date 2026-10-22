@@ -1,7 +1,7 @@
 <template>
   <div class="main-layout" :class="{ dark: themeStore.isDark }">
     <!-- 侧边栏 -->
-    <aside class="sidebar" :class="{ collapsed: isCollapse }">
+    <aside class="sidebar" :class="{ collapsed: isCollapse, 'mobile-open': mobileMenuOpen }">
       <!-- Logo -->
       <div class="sidebar-logo">
         <el-icon :size="24" color="var(--color-primary)"><Reading /></el-icon>
@@ -9,7 +9,7 @@
       </div>
 
       <!-- 菜单 -->
-      <nav class="sidebar-nav">
+      <nav class="sidebar-nav" @click="mobileMenuOpen = false">
         <router-link to="/chat" class="nav-item" :class="{ active: currentRoute === '/chat' }">
           <el-icon :size="20"><ChatDotRound /></el-icon>
           <span v-if="!isCollapse" class="nav-label">智能问答</span>
@@ -102,7 +102,7 @@
 
       <!-- 底部操作 -->
       <div class="sidebar-footer">
-        <button class="footer-btn" @click="isCollapse = !isCollapse" title="收起/展开">
+        <button class="footer-btn collapse-btn" @click="isCollapse = !isCollapse" title="收起/展开">
           <el-icon :size="18"><component :is="isCollapse ? 'Expand' : 'Fold'" /></el-icon>
         </button>
         <button class="footer-btn" @click="themeStore.toggle()" title="切换主题">
@@ -115,10 +115,26 @@
       </div>
     </aside>
 
+    <!-- 移动端导航抽屉遮罩 -->
+    <div v-if="isMobile && mobileMenuOpen" class="mobile-backdrop" @click="mobileMenuOpen = false"></div>
+
     <!-- 主内容 -->
-    <main class="main-content">
-      <router-view />
-    </main>
+    <div class="layout-body">
+      <!-- 移动端顶栏 -->
+      <header class="mobile-bar">
+        <button class="mobile-bar-btn" aria-label="打开导航" @click="mobileMenuOpen = true">
+          <el-icon :size="20"><Expand /></el-icon>
+        </button>
+        <span class="mobile-bar-title">{{ pageTitle }}</span>
+        <button class="mobile-bar-btn" aria-label="切换主题" @click="themeStore.toggle()">
+          <el-icon :size="18"><component :is="themeStore.isDark ? 'Sunny' : 'Moon'" /></el-icon>
+        </button>
+      </header>
+
+      <main class="main-content">
+        <router-view />
+      </main>
+    </div>
 
     <!-- AI 导员悬浮入口 -->
     <FloatingCounselor />
@@ -126,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
@@ -144,6 +160,27 @@ const themeStore = useThemeStore()
 const isCollapse = ref(false)
 const reviewCount = ref(0)
 
+// ==================== 移动端适配 ====================
+const isMobile = ref(false)
+const mobileMenuOpen = ref(false)
+
+function updateViewportMode() {
+  isMobile.value = window.innerWidth <= 768
+  if (isMobile.value) {
+    // 移动端抽屉始终展示完整菜单，不沿用桌面端的折叠状态
+    isCollapse.value = false
+  } else {
+    mobileMenuOpen.value = false
+  }
+}
+
+const pageTitle = computed(() => (route.meta.title as string) || 'AI 学院教学知识库')
+
+// 路由切换后自动关闭导航抽屉
+watch(() => route.path, () => {
+  mobileMenuOpen.value = false
+})
+
 // 拉取待审核文档数量（侧边栏红色角标）
 async function loadReviewCount() {
   try {
@@ -153,7 +190,14 @@ async function loadReviewCount() {
     reviewCount.value = 0
   }
 }
-onMounted(loadReviewCount)
+onMounted(() => {
+  updateViewportMode()
+  window.addEventListener('resize', updateViewportMode)
+  loadReviewCount()
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', updateViewportMode)
+})
 
 const currentRoute = computed(() => {
   const path = route.path
@@ -183,8 +227,42 @@ const currentRoute = computed(() => {
 .main-layout {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   background: var(--color-bg-page);
   color: var(--color-text-body);
+}
+
+/* 移动端顶栏 + 主内容 */
+.layout-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+.mobile-bar { display: none; }
+.mobile-bar-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+}
+.mobile-bar-btn:active { background: var(--color-bg-hover); }
+.mobile-bar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 /* ========== 侧边栏 ========== */
@@ -312,5 +390,45 @@ const currentRoute = computed(() => {
   overflow-y: auto;
   background: var(--color-bg-page);
   min-width: 0;
+  min-height: 0;
+}
+
+/* ========== 移动端 ========== */
+@media (max-width: 768px) {
+  /* 侧栏改为抽屉，不再挤占内容宽度 */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(80vw, 280px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 2200;
+    box-shadow: 8px 0 40px rgba(15, 23, 42, 0.28);
+  }
+  .sidebar.collapsed { width: min(80vw, 280px); }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .mobile-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2199;
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  .mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 48px;
+    flex-shrink: 0;
+    padding: 0 8px;
+    background: var(--color-bg-card);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .collapse-btn { display: none; }
+  .logout-btn { width: auto; }
 }
 </style>

@@ -1,11 +1,14 @@
 <template>
   <div class="chat-page">
-    <!-- 会话侧边栏 -->
-    <div class="chat-sidebar">
+    <!-- 会话侧边栏（移动端为抽屉） -->
+    <div class="chat-sidebar" :class="{ 'mobile-open': mobileSidebarOpen }">
       <div class="sidebar-header">
         <el-button type="primary" @click="handleNewChat" :icon="Plus" class="new-chat-btn">
           新对话
         </el-button>
+        <button class="mobile-sidebar-close" aria-label="关闭会话列表" @click="mobileSidebarOpen = false">
+          <el-icon :size="18"><Close /></el-icon>
+        </button>
         <el-popconfirm
           title="确定清空所有对话？"
           @confirm="handleClearAll"
@@ -22,7 +25,7 @@
           :key="session.id"
           class="session-item"
           :class="{ active: session.id === chatStore.activeSessionId }"
-          @click="chatStore.selectSession(session.id)"
+          @click="handleSelectSession(session.id)"
         >
           <el-icon class="session-icon"><ChatLineRound /></el-icon>
           <div class="session-body">
@@ -46,8 +49,25 @@
       </div>
     </div>
 
+    <!-- 移动端会话抽屉遮罩 -->
+    <div
+      v-if="isMobile && mobileSidebarOpen"
+      class="sidebar-backdrop"
+      @click="mobileSidebarOpen = false"
+    ></div>
+
     <!-- 聊天主区域 -->
     <div class="chat-main">
+      <!-- 移动端工具栏 -->
+      <div class="mobile-chat-bar">
+        <button class="mcb-btn" aria-label="打开会话列表" @click="mobileSidebarOpen = true">
+          <el-icon :size="19"><Menu /></el-icon>
+        </button>
+        <span class="mcb-title">{{ currentSessionTitle }}</span>
+        <button class="mcb-btn" aria-label="新建对话" @click="handleNewChat">
+          <el-icon :size="19"><Plus /></el-icon>
+        </button>
+      </div>
       <!-- 公告栏 -->
       <div v-if="announcements.length > 0" class="announce-bar">
         <el-icon :size="16"><Bell /></el-icon>
@@ -189,7 +209,7 @@
           placeholder="输入您的问题，按 Enter 发送..."
           resize="none"
           :disabled="chatStore.streaming"
-          @keydown.enter.exact.prevent="handleSend"
+          @keydown.enter.exact="onEnter"
         />
         <div class="input-actions">
           <span class="input-hint">
@@ -229,7 +249,7 @@
       width="70%"
       top="5vh"
       destroy-on-close
-      class="doc-dialog"
+      class="doc-dialog mobile-dialog"
     >
       <div class="doc-content" v-html="renderMarkdown(docContent)"></div>
     </el-dialog>
@@ -240,6 +260,7 @@
       title="公告详情"
       width="600px"
       destroy-on-close
+      class="mobile-dialog"
     >
       <div v-if="announcements.length > 0">
         <div
@@ -255,7 +276,7 @@
     </el-dialog>
 
     <!-- 转人工工单弹窗 -->
-    <el-dialog v-model="ticketVisible" title="转人工客服" width="520px">
+    <el-dialog v-model="ticketVisible" title="转人工客服" width="520px" class="mobile-dialog">
       <div class="ticket-dialog-hint">
         <el-icon :size="16" color="#e6a23c"><Headset /></el-icon>
         <span>人工客服将尽快受理，您可在「我的工单」中查看处理进度。</span>
@@ -277,13 +298,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Plus, ChatLineRound, Delete, Promotion,
   Service, UserFilled, VideoPause,
   Cpu, Monitor, Connection, Tools, DataLine, MagicStick,
-  Bell, Close, Headset,
+  Bell, Close, Headset, Menu,
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/store/chat'
 import { useAuthStore } from '@/store/auth'
@@ -299,6 +320,26 @@ const route = useRoute()
 const router = useRouter()
 const inputText = ref('')
 const messageAreaRef = ref<HTMLElement>()
+
+// ==================== 移动端适配 ====================
+const isMobile = ref(false)
+const mobileSidebarOpen = ref(false)
+
+function updateViewportMode() {
+  isMobile.value = window.innerWidth <= 768
+  if (!isMobile.value) mobileSidebarOpen.value = false
+}
+
+/** 移动端顶栏显示的当前会话标题 */
+const currentSessionTitle = computed(() => {
+  const session = chatStore.sessions.find(item => item.id === chatStore.activeSessionId)
+  return session?.title || '智能问答'
+})
+
+function handleSelectSession(id: string) {
+  chatStore.selectSession(id)
+  mobileSidebarOpen.value = false
+}
 
 const md = new MarkdownIt({ breaks: true, linkify: true })
 
@@ -448,10 +489,18 @@ function quickAsk(question: string) {
   handleSend()
 }
 
+/** 回车发送；移动端中文输入法组词过程中的回车不触发发送 */
+function onEnter(e: KeyboardEvent) {
+  if (e.isComposing) return
+  e.preventDefault()
+  handleSend()
+}
+
 /** 新对话 */
 function handleNewChat() {
   chatStore.activeSessionId = null
   chatStore.messages = []
+  mobileSidebarOpen.value = false
 }
 
 /** 转人工工单 */
@@ -495,6 +544,7 @@ async function submitTicket() {
 /** 清空所有对话（仅前端，后端数据保留） */
 function handleClearAll() {
   chatStore.clearAllFrontend()
+  mobileSidebarOpen.value = false
   ElMessage.success('全部对话已清空')
 }
 
@@ -512,7 +562,12 @@ if (sessionId) {
 }
 
 onMounted(() => {
+  updateViewportMode()
+  window.addEventListener('resize', updateViewportMode)
   fetchAnnouncements()
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', updateViewportMode)
 })
 </script>
 
@@ -742,10 +797,117 @@ onMounted(() => {
 .input-btns { display: flex; align-items: center; gap: 12px; }
 .char-count { font-size: 12px; color: var(--color-text-placeholder); }
 
+/* 移动端专属元素，桌面隐藏 */
+.mobile-chat-bar { display: none; }
+.mobile-sidebar-close { display: none; }
+
+/* ================= 移动端 ================= */
 @media (max-width: 768px) {
-  .chat-sidebar { display: none; }
-  .chat-main { max-width: 100%; }
-  .message-row { max-width: 95%; }
+  /* 会话侧栏改为抽屉，保留切换/删除会话能力 */
+  .chat-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(84vw, 320px);
+    z-index: 2100;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 8px 0 32px rgba(15, 23, 42, 0.25);
+  }
+  .chat-sidebar.mobile-open { transform: translateX(0); }
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2099;
+    background: rgba(15, 23, 42, 0.45);
+  }
+  .mobile-sidebar-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    color: var(--color-text-secondary);
+  }
+  .delete-btn { opacity: 1; }
+
+  .chat-main { max-width: 100%; min-width: 0; }
+
+  /* 顶部工具栏 */
+  .mobile-chat-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 46px;
+    flex-shrink: 0;
+    padding: 0 8px;
+    background: var(--color-bg-card);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .mcb-btn {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+  }
+  .mcb-btn:active { background: var(--color-bg-hover); }
+  .mcb-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .announce-bar {
+    margin: 8px 10px 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .message-area { padding: 12px 10px; }
+  .message-row { max-width: 95%; gap: 8px; margin-bottom: 18px; }
+  .message-avatar { width: 30px; height: 30px; }
+  .message-bubble { padding: 10px 12px; border-radius: 14px; font-size: 14px; }
+
+  .welcome-inner { padding: 16px 4px; }
+  .welcome-hero { margin-bottom: 20px; }
+  .welcome-bot { width: 52px; height: 52px; margin-bottom: 12px; }
+  .welcome h2 { font-size: 19px; }
+  .welcome p { font-size: 13px; padding: 0 4px; }
+  .preset-card { padding: 10px 12px; }
+
+  .input-area {
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  /* iOS 输入框字号小于 16px 会触发页面自动放大 */
+  .input-area :deep(.el-textarea__inner) { font-size: 16px; }
+  .input-hint, .char-count { display: none; }
+  .input-actions { justify-content: flex-end; margin-top: 6px; }
+
+  /* 固定宽度的弹窗在窄屏上会溢出，统一改为接近全宽 */
+  :global(.mobile-dialog) {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    margin-top: 6vh !important;
+  }
+  :global(.mobile-dialog .el-dialog__header) { padding: 14px 14px 8px; }
+  :global(.mobile-dialog .el-dialog__body) { padding: 12px 14px; }
 }
 
 /* 文档查看弹窗 */
@@ -785,4 +947,9 @@ onMounted(() => {
 .announce-detail-item h4 { margin: 0 0 8px; font-size: 16px; color: var(--color-text-primary); }
 .announce-content { line-height: 1.8; color: var(--color-text-body); }
 .announce-time { font-size: 12px; color: var(--color-text-placeholder); margin-top: 8px; }
+
+/* 放在基础样式之后，确保移动端弹窗内容高度覆盖 70vh */
+@media (max-width: 768px) {
+  .doc-content { max-height: 60vh; }
+}
 </style>
