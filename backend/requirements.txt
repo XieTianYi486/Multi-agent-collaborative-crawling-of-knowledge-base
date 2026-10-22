@@ -62,7 +62,8 @@ diskcache==5.6.3
 networkx==3.4.2
 
 # --- 语音合成（Edge TTS，免费，无需 API Key）---
-edge-tts==6.1.12
+# 6.1.12 已被微软端点拒绝（WebSocket 403），需 7.x
+edge-tts>=7.3.1
 
 # --- 工具库 ---
 pydantic==2.10.4
