@@ -25,13 +25,54 @@
       <section v-if="open" ref="panelEl" class="cp-panel" :style="panelStyle">
         <header class="cp-head" title="按住此处可拖动窗口" @pointerdown="onHeadDown" @dragstart.prevent>
           <div class="cp-avatar">
-            <img class="cp-avatar-img" :src="counselorAvatar" alt="AI 导员" draggable="false" />
+            <Live2DAvatar :talking="streaming || speaking" :active="open" :width="72" :height="88" :fallback="counselorAvatar" />
           </div>
           <div class="cp-title">
             <div class="cp-name">AI 导员</div>
             <div class="cp-sub">温柔耐心 · 随时陪你聊聊</div>
           </div>
           <div class="cp-actions">
+            <div class="cp-voice-wrap">
+              <button class="cp-icon-btn cp-mic-btn" :class="{ muted: !voiceEnabled }" :title="voiceEnabled ? '关闭语音' : '开启语音'" @click="toggleVoice">
+                <el-icon class="cp-voice-icon" :class="{ off: !voiceEnabled }"><Microphone /></el-icon>
+                <span v-if="!voiceEnabled" class="cp-mic-slash"></span>
+              </button>
+              <!-- 加载指示器：正在生成回复且尚未开始说话时显示 -->
+              <div v-if="streaming && !speaking" class="cp-loading-spinner" title="导员正在思考中…">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="3"/>
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"
+                    stroke-dasharray="14 42" transform="rotate(0 12 12)">
+                    <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/>
+                  </circle>
+                </svg>
+              </div>
+              <!-- 音色选择下拉 -->
+              <button
+                v-if="edgeVoices.length"
+                class="cp-icon-btn cp-voice-sel"
+                title="选择音色"
+                @click.stop="voiceMenuOpen = !voiceMenuOpen"
+              >
+                <el-icon><CaretBottom /></el-icon>
+              </button>
+              <transition name="cp-fade">
+                <div v-if="voiceMenuOpen" class="cp-voice-menu" @click.stop>
+                  <div class="cp-voice-menu-title">选择音色</div>
+                  <div
+                    v-for="v in edgeVoices"
+                    :key="v.short_name"
+                    class="cp-voice-item"
+                    :class="{ active: v.short_name === selectedVoice }"
+                    @click="selectVoice(v.short_name)"
+                  >
+                    <span class="cp-voice-name">{{ v.name }}</span>
+                    <span class="cp-voice-lang">{{ v.desc }}</span>
+                  </div>
+                  <div v-if="!edgeVoices.length" class="cp-voice-empty">暂无可用音色</div>
+                </div>
+              </transition>
+            </div>
             <button class="cp-icon-btn" title="历史对话" @click="toggleHistory">
               <el-icon><Clock /></el-icon>
             </button>
@@ -213,8 +254,20 @@
 
           <div v-if="streaming" class="cp-row assistant">
             <div class="cp-bubble">
-              <div v-if="streamContent" class="cp-text" v-html="renderMarkdown(streamContent)"></div>
-              <div v-else class="cp-typing"><i></i><i></i><i></i></div>
+              <div v-if="streamContent && minLoadingDone" class="cp-text" v-html="renderMarkdown(streamContent)"></div>
+              <div v-else class="cp-loading">
+                <div class="cp-typing"><i></i><i></i><i></i></div>
+                <span class="cp-loading-text">导员正在思考中…</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="loadingHistory && !streaming" class="cp-row assistant">
+            <div class="cp-bubble">
+              <div class="cp-loading">
+                <div class="cp-typing"><i></i><i></i><i></i></div>
+                <span class="cp-loading-text">加载对话中…</span>
+              </div>
             </div>
           </div>
 
@@ -247,10 +300,11 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { Close, Plus, Clock, Delete, Promotion, Refresh, ArrowLeft, DataAnalysis } from '@element-plus/icons-vue'
+import { Close, Plus, Clock, Delete, Promotion, Refresh, ArrowLeft, DataAnalysis, Microphone, CaretBottom } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { counselorApi, counselorStream } from '@/api/counselor'
 import type { CounselorSource, CounselorSession } from '@/api/counselor'
+import Live2DAvatar from './Live2DAvatar.vue'
 
 // html: false —— 禁止原始 HTML 透传，避免模型输出带标签时触发 XSS
 const md = new MarkdownIt({ breaks: true, linkify: true, html: false })
@@ -389,7 +443,9 @@ const open = ref(false)
 const input = ref('')
 const messages = ref<LocalMessage[]>([])
 const streaming = ref(false)
+const loadingHistory = ref(false)   // 正在加载会话历史消息
 const streamContent = ref('')
+const minLoadingDone = ref(false)   // 加载状态最小显示时间已过
 const sessionId = ref<string | null>(null)
 const sessions = ref<CounselorSession[]>([])
 const showHistory = ref(false)
@@ -397,6 +453,185 @@ const notice = ref('')
 const errorMsg = ref('')
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+// ==================== 语音播报（Edge TTS - 分段合成降低延迟） ====================
+const voiceEnabled = ref(true)                               // 是否开启语音
+const speaking = ref(false)                                   // 是否正在播报（用于嘴型同步）
+const voiceMenuOpen = ref(false)                              // 音色选择菜单
+const selectedVoice = ref(localStorage.getItem('counselor_voice') || 'zh-CN-XiaoxiaoNeural') // 用户选中的 Edge TTS 音色
+
+// 当前播放的音频元素和分段队列
+let currentAudio: HTMLAudioElement | null = null
+let segmentQueue: string[] = []          // 待播放的文本分段
+let segmentIndex = 0                     // 当前播放到第几段
+let cancelled = false                    // 是否被取消（stopSpeak）
+
+// Edge TTS 音色列表（从后端获取）
+interface EdgeVoice {
+  short_name: string
+  name: string
+  gender: string
+  desc: string
+}
+const edgeVoices = ref<EdgeVoice[]>([])
+
+async function loadEdgeVoices() {
+  try {
+    const token = localStorage.getItem('access_token')
+    const res = await fetch('/api/v1/counselor/tts/voices', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    const json = await res.json()
+    if (json.code === 0 && Array.isArray(json.data)) {
+      edgeVoices.value = json.data
+    }
+  } catch (e) {
+    // 失败时不影响使用，音色列表为空
+  }
+}
+
+function selectVoice(shortName: string) {
+  selectedVoice.value = shortName
+  localStorage.setItem('counselor_voice', shortName)
+  voiceMenuOpen.value = false
+  // 切换音色后试听一句（无论语音是否开启，都播放试听让用户确认）
+  stopSpeak()
+  speak('你好呀，我是你的导员，这是我的新声音。')
+}
+
+// 按标点把长文本切成短句，每段不超过 80 字，降低单段合成延迟
+function splitText(text: string): string[] {
+  // 先按句号、问号、感叹号切分，保留标点
+  const sentences = text.match(/[^。！？.!?]+[。！？.!?]?/g) || [text]
+  const segments: string[] = []
+  for (const s of sentences) {
+    const trimmed = s.trim()
+    if (!trimmed) continue
+    // 长句再按逗号切分
+    if (trimmed.length > 80) {
+      const parts = trimmed.match(/[^，,；;]+[，,；;]?/g) || [trimmed]
+      for (const p of parts) {
+        const pt = p.trim()
+        if (pt) segments.push(pt)
+      }
+    } else {
+      segments.push(trimmed)
+    }
+  }
+  return segments.length ? segments : [text]
+}
+
+// 请求单段音频，返回 blob url
+async function fetchSegmentAudio(segment: string): Promise<string> {
+  const token = localStorage.getItem('access_token')
+  const url = `/api/v1/counselor/tts?text=${encodeURIComponent(segment)}&voice=${encodeURIComponent(selectedVoice.value)}`
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error(`TTS 请求失败: ${res.status}`)
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
+}
+
+// 播放分段队列：当前段播放时，后台预取下一段
+async function playSegments(segments: string[]) {
+  segmentQueue = segments
+  segmentIndex = 0
+  cancelled = false
+  speaking.value = true
+
+  let nextAudioUrl: string | null = null
+
+  for (let i = 0; i < segments.length; i++) {
+    if (cancelled) break
+    segmentIndex = i
+
+    let audioUrl: string
+    if (nextAudioUrl) {
+      // 使用上一轮预取的结果
+      audioUrl = nextAudioUrl
+      nextAudioUrl = null
+    } else {
+      audioUrl = await fetchSegmentAudio(segments[i])
+    }
+
+    // 后台预取下一段（不等待）
+    const prefetchPromise = (i + 1 < segments.length)
+      ? fetchSegmentAudio(segments[i + 1]).then(url => { nextAudioUrl = url }).catch(() => { nextAudioUrl = null })
+      : null
+
+    // 播放当前段
+    await new Promise<void>((resolve) => {
+      if (cancelled) { resolve(); return }
+      const audio = new Audio(audioUrl)
+      currentAudio = audio
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl)
+        currentAudio = null
+        resolve()
+      }
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl)
+        currentAudio = null
+        resolve()
+      }
+      audio.play().catch(() => resolve())
+    })
+
+    // 等待预取完成（如果有）
+    if (prefetchPromise) await prefetchPromise.catch(() => {})
+  }
+
+  if (!cancelled) {
+    speaking.value = false
+  }
+  currentAudio = null
+}
+
+function stopSpeak() {
+  cancelled = true
+  segmentQueue = []
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio.currentTime = 0
+    currentAudio = null
+  }
+  speaking.value = false
+}
+
+async function speak(text: string) {
+  stopSpeak()
+  if (!voiceEnabled.value || !text) return
+  // 去掉 markdown 标记和超长文本，只朗读前 500 字
+  const clean = text.replace(/```[\s\S]*?```/g, ' ').replace(/[#*`>\-]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!clean) return
+  const toRead = clean.slice(0, 500)
+
+  // 按标点切分成短句，逐段合成播放，降低首音延迟
+  const segments = splitText(toRead)
+  playSegments(segments)
+}
+
+function toggleVoice() {
+  voiceEnabled.value = !voiceEnabled.value
+  if (!voiceEnabled.value) {
+    stopSpeak()
+  } else {
+    // 开启语音时，朗读最后一条 AI 消息；没有则朗读问候语
+    const lastAssistant = [...messages.value].reverse().find(m => m.role === 'assistant')
+    if (lastAssistant?.content) {
+      speak(lastAssistant.content)
+    } else {
+      speak('你好呀，我是你的导员，有什么可以帮你的吗？')
+    }
+  }
+}
+
+// 点击页面其他地方关闭音色菜单
+function closeVoiceMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.cp-voice-wrap')) voiceMenuOpen.value = false
+}
 
 // ==================== 拖动 ====================
 const FAB_SIZE = 58      // 悬浮按钮边长
@@ -520,11 +755,14 @@ function onWindowResize() {
 
 onMounted(() => {
   window.addEventListener('resize', onWindowResize)
+  document.addEventListener('click', closeVoiceMenu)
   autoResizeInput()
 })
 onUnmounted(() => {
   window.removeEventListener('resize', onWindowResize)
+  document.removeEventListener('click', closeVoiceMenu)
   document.body.classList.remove('cp-dragging')
+  stopSpeak()
 })
 
 let controller: AbortController | null = null
@@ -608,6 +846,7 @@ async function openPanel() {
     y: clamp(fabPos.value.y - PANEL_GAP - h, window.innerHeight - h - EDGE_MARGIN),
   }
   loadSessions()
+  loadEdgeVoices()
   scrollToBottom()
   autoResizeInput()
 }
@@ -617,6 +856,7 @@ function closePanel() {
   // 因此无需用面板位置反向推导，避免"拖到上方→展开（面板被 clamp 到顶部）→收起后按钮掉到下方"的位置漂移
   open.value = false
   showHistory.value = false
+  stopSpeak()
 }
 
 function toggleHistory() {
@@ -636,6 +876,7 @@ async function loadSession(id: string) {
   if (streaming.value) stop()
   sessionId.value = id
   showHistory.value = false
+  loadingHistory.value = true
   try {
     const res = await counselorApi.getMessages(id)
     const items = res.data?.data?.items || []
@@ -649,6 +890,8 @@ async function loadSession(id: string) {
     scrollToBottom()
   } catch {
     messages.value = []
+  } finally {
+    loadingHistory.value = false
   }
 }
 
@@ -687,6 +930,7 @@ function send() {
   nextTick(autoResizeInput)
   notice.value = ''
   errorMsg.value = ''
+  stopSpeak()
   messages.value.push({ id: ++seq, role: 'user', content: question })
 
   // 算绩点是确定性计算，交给模型心算容易在分段换算和排除规则上出错，
@@ -706,6 +950,9 @@ function send() {
 
   streaming.value = true
   streamContent.value = ''
+  minLoadingDone.value = false
+  // 加载状态至少显示 500ms，避免 AI 回复太快看不到
+  setTimeout(() => { minLoadingDone.value = true }, 500)
   scrollToBottom()
 
   let pendingSources: CounselorSource[] = []
@@ -724,10 +971,11 @@ function send() {
     },
     onDone: (result) => {
       if (result.session_id) sessionId.value = result.session_id
+      const answer = result.full_answer || streamContent.value
       messages.value.push({
         id: ++seq,
         role: 'assistant',
-        content: result.full_answer || streamContent.value,
+        content: answer,
         mode: result.mode,
         sources: result.sources?.length ? result.sources : pendingSources,
       })
@@ -735,6 +983,8 @@ function send() {
       streaming.value = false
       loadSessions()
       scrollToBottom()
+      // 朗读回复内容
+      speak(answer)
     },
     onError: (err) => {
       streaming.value = false
@@ -747,6 +997,7 @@ function send() {
 
 function stop() {
   controller?.abort()
+  stopSpeak()
   if (streamContent.value) {
     messages.value.push({
       id: ++seq,
@@ -886,10 +1137,10 @@ function stop() {
 :global(body.cp-dragging .cp-fab),
 :global(body.cp-dragging .cp-panel) { transition: none !important; }
 .cp-avatar {
-  width: 40px;
-  height: 40px;
+  width: 72px;
+  height: 88px;
   box-sizing: border-box;
-  border-radius: 50%;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -931,6 +1182,84 @@ function stop() {
   transition: background 0.15s ease;
 }
 .cp-icon-btn:hover { background: rgba(255, 255, 255, 0.2); }
+.cp-voice-icon.off { opacity: 0.5; }
+/* 闭麦状态：麦克风按钮变灰 + 红色禁止斜杠 */
+.cp-mic-btn.muted { background: rgba(255, 255, 255, 0.08); }
+.cp-mic-btn { position: relative; }
+.cp-mic-slash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 2.5px;
+  background: #ff4d4f;
+  border-radius: 2px;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  pointer-events: none;
+  box-shadow: 0 0 2px rgba(0,0,0,0.3);
+}
+
+/* 音色选择 */
+.cp-voice-wrap { position: relative; display: flex; align-items: center; gap: 2px; }
+.cp-loading-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+.cp-voice-sel { font-size: 12px; }
+.cp-voice-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  min-width: 200px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  padding: 6px;
+  z-index: 1000;
+}
+.cp-voice-menu-title {
+  font-size: 12px;
+  color: #8a8f99;
+  padding: 6px 10px 4px;
+}
+.cp-voice-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.cp-voice-item:hover { background: #f3f4f6; }
+.cp-voice-item.active {
+  background: #eef2ff;
+}
+.cp-voice-item.active .cp-voice-name {
+  color: #6366f1;
+  font-weight: 600;
+}
+.cp-voice-name {
+  font-size: 13px;
+  color: #333;
+}
+.cp-voice-lang {
+  font-size: 11px;
+  color: #a0a3ab;
+}
+.cp-voice-empty {
+  padding: 12px 10px;
+  font-size: 13px;
+  color: #a0a3ab;
+  text-align: center;
+}
 
 /* 历史 */
 .cp-history {
@@ -1456,6 +1785,16 @@ function stop() {
 
 /* 打字指示 */
 .cp-typing { display: flex; gap: 4px; align-items: center; height: 18px; }
+.cp-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.cp-loading-text {
+  font-size: 13px;
+  color: #8a8f99;
+}
 .cp-typing i {
   width: 6px;
   height: 6px;

@@ -61,6 +61,9 @@ diskcache==5.6.3
 # --- 图处理（知识图谱阶段用）---
 networkx==3.4.2
 
+# --- 语音合成（Edge TTS，免费，无需 API Key）---
+edge-tts==6.1.12
+
 # --- 工具库 ---
 pydantic==2.10.4
 pydantic-settings==2.7.0

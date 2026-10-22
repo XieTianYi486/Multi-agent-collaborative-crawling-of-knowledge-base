@@ -15,7 +15,7 @@ import uuid as uuid_lib
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -415,6 +415,76 @@ def submit_feedback(
         log.feedback_reason = request.reason
         db.flush()
     return APIResponse(code=0, message="感谢你的反馈")
+
+
+# ==================== Edge TTS 语音合成 ====================
+
+# Edge TTS 可用的中文音色（精选，避免每次都请求列表）
+EDGE_TTS_VOICES = [
+    {"short_name": "zh-CN-XiaoxiaoNeural", "name": "晓晓", "gender": "Female", "desc": "温柔女声，最常用"},
+    {"short_name": "zh-CN-XiaoyiNeural", "name": "晓伊", "gender": "Female", "desc": "活泼女孩声"},
+    {"short_name": "zh-CN-YunxiNeural", "name": "云希", "gender": "Male", "desc": "阳光男声"},
+    {"short_name": "zh-CN-YunyangNeural", "name": "云扬", "gender": "Male", "desc": "新闻播音男声"},
+    {"short_name": "zh-CN-YunjianNeural", "name": "云健", "gender": "Male", "desc": "成熟男声"},
+    {"short_name": "zh-CN-XiaomengNeural", "name": "晓梦", "gender": "Female", "desc": "温柔女声"},
+    {"short_name": "zh-CN-XiaohanNeural", "name": "晓涵", "gender": "Female", "desc": "知性女声"},
+    {"short_name": "zh-CN-YunyeNeural", "name": "云野", "gender": "Male", "desc": "沉稳男声"},
+    {"short_name": "zh-CN-XiaoshuangNeural", "name": "晓双", "gender": "Female", "desc": "甜美女声"},
+    {"short_name": "zh-CN-XiaoyouNeural", "name": "晓悠", "gender": "Female", "desc": "童声女孩"},
+    {"short_name": "zh-CN-XiaozhenNeural", "name": "晓真", "gender": "Female", "desc": "干练女声"},
+    {"short_name": "zh-CN-YunxiaNeural", "name": "云夏", "gender": "Male", "desc": "青年男声"},
+]
+
+
+@router.get("/tts/voices", summary="获取 Edge TTS 可用音色列表")
+async def list_tts_voices():
+    """返回精选的中文 Edge TTS 音色列表"""
+    return APIResponse(code=0, message="success", data=EDGE_TTS_VOICES)
+
+
+@router.get("/tts", summary="Edge TTS 语音合成（返回 mp3 音频流）")
+async def tts_synthesize(
+    text: str = Query(..., description="要合成的文本"),
+    voice: str = Query("zh-CN-XiaoxiaoNeural", description="音色 ShortName"),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    使用 Edge TTS（微软 Edge 浏览器语音引擎）将文本合成为 mp3 音频流。
+    完全免费、无需 API Key，音色质量接近 Azure 付费神经语音。
+    """
+    if not text or not text.strip():
+        return JSONResponse(status_code=400, content={"code": 400, "message": "文本不能为空"})
+
+    # 文本截断，避免过长
+    text = text.strip()[:2000]
+
+    # 校验音色是否在允许列表中
+    allowed = {v["short_name"] for v in EDGE_TTS_VOICES}
+    if voice not in allowed:
+        voice = "zh-CN-XiaoxiaoNeural"
+
+    try:
+        import edge_tts
+    except ImportError:
+        return JSONResponse(
+            status_code=503,
+            content={"code": 503, "message": "TTS 服务未安装 edge-tts 依赖，请联系管理员"},
+        )
+
+    async def audio_stream():
+        communicate = edge_tts.Communicate(text, voice, rate="+0%", pitch="+0Hz")
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                yield chunk["data"]
+
+    return StreamingResponse(
+        audio_stream(),
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "no-cache",
+            "Accept-Ranges": "none",
+        },
+    )
 
 
 # ==================== 工具函数 ====================
