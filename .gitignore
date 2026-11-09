@@ -76,3 +76,7 @@ vite_out.txt
 /kb_deploy.tar.gz
 /*.tar.gz
 /*.zip
+
+# 真实学生名单（含学号/姓名，属个人数据，禁止入库）
+/deploy/students.json
+/deploy/students_bundle.b64

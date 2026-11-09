@@ -13,6 +13,7 @@ from app.models.counselor import (
 )
 from app.models.video import Video
 from app.models.notification import Notification
+from app.models.teaching import TeachingAssignment
 
 __all__ = [
     "User", "Role", "Department",
@@ -24,4 +25,5 @@ __all__ = [
     "CounselorSession", "CounselorMessage", "CounselorLog",
     "Video",
     "Notification",
+    "TeachingAssignment",
 ]

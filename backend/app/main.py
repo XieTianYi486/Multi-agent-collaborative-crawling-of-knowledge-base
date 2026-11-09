@@ -26,6 +26,7 @@ import app.models.api_client  # noqa: F401
 import app.models.counselor   # noqa: F401
 import app.models.collection  # noqa: F401
 import app.models.video       # noqa: F401
+import app.models.teaching    # noqa: F401
 
 from app.models.user import Role, User
 from app.core.security import hash_password
@@ -121,7 +122,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 from app.api.v1 import (
     auth, documents, chat, admin, tickets, security, crawler, api_clients,
-    collection, counselor, videos, notifications,
+    collection, counselor, videos, notifications, teaching,
 )
 
 app.include_router(auth.router, prefix="/api/v1")
@@ -138,6 +139,7 @@ app.include_router(collection.router, prefix="/api/v1")
 app.include_router(videos.router, prefix="/api/v1")
 app.include_router(videos.admin_router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
+app.include_router(teaching.router, prefix="/api/v1")
 # AI 助手：由配置开关控制（默认启用）
 if settings.COUNSELOR_ENABLED:
     app.include_router(counselor.router, prefix="/api/v1")

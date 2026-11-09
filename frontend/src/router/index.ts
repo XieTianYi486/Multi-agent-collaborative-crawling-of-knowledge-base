@@ -60,6 +60,12 @@ const router = createRouter({
           meta: { title: '我的补采' },
         },
         {
+          path: 'my-students',
+          name: 'MyStudents',
+          component: () => import('@/views/teaching/MyStudentsPage.vue'),
+          meta: { title: '我的学生', teacher: true },
+        },
+        {
           path: 'admin',
           redirect: '/admin/documents',
         },
@@ -199,6 +205,22 @@ router.beforeEach(async (to, _from, next) => {
         return
       }
       if (!isAdminUser) {
+        next('/chat')
+        return
+      }
+    } catch {
+      next('/chat')
+      return
+    }
+  }
+
+  // 教师页面权限检查（管理员也可查看）
+  if (to.meta.teacher && token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      const roleName = payload.role_name || ''
+      const allowed = roleName === '老师' || roleName === '超级管理员' || roleName === '知识库管理员'
+      if (!allowed) {
         next('/chat')
         return
       }

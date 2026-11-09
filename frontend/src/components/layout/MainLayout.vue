@@ -47,6 +47,16 @@
           <span v-if="!isCollapse" class="nav-label">我的补采</span>
         </router-link>
 
+        <router-link
+          v-if="authStore.user?.role_name === '老师'"
+          to="/my-students"
+          class="nav-item"
+          :class="{ active: currentRoute === '/my-students' }"
+        >
+          <el-icon :size="20"><UserFilled /></el-icon>
+          <span v-if="!isCollapse" class="nav-label">我的学生</span>
+        </router-link>
+
         <template v-if="authStore.isAdmin()">
           <div v-if="!isCollapse" class="nav-group-title">内容运营</div>
 
@@ -353,6 +363,7 @@ const currentRoute = computed(() => {
   if (path.startsWith('/videos')) return '/videos'
   if (path.startsWith('/tickets')) return '/tickets'
   if (path.startsWith('/my-collections')) return '/my-collections'
+  if (path.startsWith('/my-students')) return '/my-students'
   if (path.startsWith('/chat')) return '/chat'
   if (path.startsWith('/profile')) return '/profile'
   return '/chat'

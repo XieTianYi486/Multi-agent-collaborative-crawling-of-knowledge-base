@@ -36,6 +36,22 @@
                 <el-tag size="small" round type="info">{{ dept.member_count ?? 0 }} 人</el-tag>
               </span>
             </div>
+            <div v-if="dept.dept_type === 'class'" class="teacher-row">
+              <span class="teacher-label">任课老师</span>
+              <div class="teacher-tags">
+                <el-tag
+                  v-for="a in assignmentsByClass(dept.id)"
+                  :key="a.id"
+                  size="small"
+                  round
+                  closable
+                  @close="handleRemoveAssignment(a)"
+                >
+                  {{ a.teacher_name || a.teacher_username }}<span v-if="a.subject"> · {{ a.subject }}</span>
+                </el-tag>
+                <el-button text size="small" :icon="Plus" @click="openAssignDialog(dept)">分配</el-button>
+              </div>
+            </div>
           </div>
           <div class="dept-actions">
             <el-button text size="small" :icon="Edit" @click="showEditDialog(dept)">编辑</el-button>
@@ -75,15 +91,50 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 分配任课老师 -->
+    <el-dialog v-model="assignVisible" title="分配任课老师" width="440px" destroy-on-close>
+      <div class="assign-target">
+        <el-icon :size="16"><OfficeBuilding /></el-icon>
+        <span>{{ assignClass?.name }}</span>
+      </div>
+      <el-form label-width="64px">
+        <el-form-item label="教师">
+          <el-select
+            v-model="assignForm.teacher_id"
+            filterable
+            clearable
+            placeholder="选择教师（可搜索姓名或账号）"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="t in teachers"
+              :key="t.id"
+              :label="`${t.real_name || t.username}（${t.username}）`"
+              :value="t.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="学科">
+          <el-input v-model="assignForm.subject" placeholder="选填，如 数据结构" maxlength="64" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assignVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assigning" @click="handleAssign">确认分配</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { Plus, OfficeBuilding, User, Edit, Delete } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import client from '@/api/client'
+import { teachingApi } from '@/api/teaching'
+import type { TeachingAssignmentRow } from '@/api/teaching'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -100,6 +151,87 @@ const formRef = ref<FormInstance>()
 const form = reactive({ name: '', description: '', dept_type: 'teaching' })
 const rules: FormRules = {
   name: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
+}
+
+// ==================== 任课老师分配 ====================
+const assignments = ref<TeachingAssignmentRow[]>([])
+const teachers = ref<any[]>([])
+const assignVisible = ref(false)
+const assigning = ref(false)
+const assignClass = ref<any | null>(null)
+const assignForm = reactive<{ teacher_id: number | undefined; subject: string }>({
+  teacher_id: undefined,
+  subject: '',
+})
+
+function assignmentsByClass(classId: number) {
+  return assignments.value.filter((a) => a.class_id === classId)
+}
+
+async function loadAssignments() {
+  try {
+    const res = await teachingApi.assignments()
+    assignments.value = res.data.data || []
+  } catch {
+    assignments.value = []
+  }
+}
+
+async function loadTeachers() {
+  try {
+    const res = await teachingApi.teachers()
+    teachers.value = res.data.data || []
+  } catch {
+    teachers.value = []
+  }
+}
+
+function openAssignDialog(dept: any) {
+  assignClass.value = dept
+  assignForm.teacher_id = undefined
+  assignForm.subject = ''
+  assignVisible.value = true
+}
+
+async function handleAssign() {
+  if (!assignForm.teacher_id || !assignClass.value) {
+    ElMessage.warning('请选择教师')
+    return
+  }
+  assigning.value = true
+  try {
+    await teachingApi.createAssignment({
+      teacher_id: assignForm.teacher_id,
+      class_id: assignClass.value.id,
+      subject: assignForm.subject || undefined,
+    })
+    ElMessage.success('已分配任课老师')
+    assignVisible.value = false
+    await loadAssignments()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '分配失败')
+  } finally {
+    assigning.value = false
+  }
+}
+
+async function handleRemoveAssignment(a: TeachingAssignmentRow) {
+  try {
+    await ElMessageBox.confirm(
+      `确定取消「${a.teacher_name || a.teacher_username}」在班级中的授课关系？`,
+      '取消授课关系',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await teachingApi.removeAssignment(a.id)
+    ElMessage.success('已取消')
+    await loadAssignments()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '操作失败')
+  }
 }
 
 async function loadData() {
@@ -159,7 +291,11 @@ async function handleDelete(id: number) {
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  loadData()
+  loadAssignments()
+  loadTeachers()
+})
 </script>
 
 <style scoped>
@@ -193,5 +329,9 @@ onMounted(loadData)
 .dept-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
 .meta-item { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--color-text-secondary); }
 .meta-tags { display: flex; align-items: center; gap: 6px; }
+.teacher-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--color-border); }
+.teacher-label { font-size: 12px; color: var(--color-text-secondary); white-space: nowrap; line-height: 24px; }
+.teacher-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.assign-target { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 10px 12px; border-radius: 8px; background: var(--color-primary-light); color: var(--color-primary); font-weight: 600; }
 .dept-actions { display: flex; justify-content: flex-end; gap: 2px; border-top: 1px solid var(--color-border); padding-top: 12px; }
 </style>
