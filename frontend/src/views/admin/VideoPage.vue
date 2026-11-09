@@ -305,7 +305,7 @@ function openCreate() {
   dialogVisible.value = true
 }
 
-function openEdit(row: VideoItem) {
+function openEdit(row: VideoItem | Record<string, any>) {
   editingId.value = row.id
   form.value = {
     title: row.title,
@@ -361,7 +361,7 @@ async function handleSubmit() {
   }
 }
 
-async function toggleStatus(row: VideoItem) {
+async function toggleStatus(row: VideoItem | Record<string, any>) {
   const next = row.status === 1 ? 0 : 1
   try {
     await videoAdminApi.setStatus(row.id, next)
@@ -372,7 +372,7 @@ async function toggleStatus(row: VideoItem) {
   }
 }
 
-async function handleDelete(row: VideoItem) {
+async function handleDelete(row: VideoItem | Record<string, any>) {
   try {
     await ElMessageBox.confirm(`确定删除视频「${row.title}」？删除后不影响 B 站原视频。`, '删除确认', {
       confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',

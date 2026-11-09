@@ -262,9 +262,9 @@ async function saveRole(row: any) {
   } catch { ElMessage.error('更新失败') }
 }
 
-function roleTagType(name: string) {
+function roleTagType(name: string): 'primary' | 'success' | 'warning' | 'info' | 'danger' | undefined {
   if (!name) return 'info'
-  if (name.includes('超级')) return ''
+  if (name.includes('超级')) return undefined
   if (name.includes('知识库')) return 'warning'
   if (name.includes('部门')) return 'primary'
   return 'info'

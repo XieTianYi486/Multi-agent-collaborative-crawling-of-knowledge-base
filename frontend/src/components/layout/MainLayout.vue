@@ -241,12 +241,18 @@ const notifLoading = ref(false)
 let notifTimer: ReturnType<typeof setInterval> | undefined
 
 async function loadUnreadCount() {
+  // 页面切到后台时不轮询，避免无意义请求；切回前台由 visibilitychange 立即刷新
+  if (document.hidden) return
   try {
     const res = await notificationApi.unreadCount()
     unreadCount.value = res.data.data?.count || 0
   } catch {
     unreadCount.value = 0
   }
+}
+
+function handleVisibilityChange() {
+  if (!document.hidden) loadUnreadCount()
 }
 
 async function loadNotifications() {
@@ -333,12 +339,14 @@ async function loadReviewCount() {
 onMounted(() => {
   updateViewportMode()
   window.addEventListener('resize', updateViewportMode)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   loadReviewCount()
   loadUnreadCount()
   notifTimer = setInterval(loadUnreadCount, 60000)
 })
 onUnmounted(() => {
   window.removeEventListener('resize', updateViewportMode)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (notifTimer) clearInterval(notifTimer)
 })
 

@@ -538,8 +538,9 @@ function quickAsk(question: string) {
 }
 
 /** 回车发送；移动端中文输入法组词过程中的回车不触发发送 */
-function onEnter(e: KeyboardEvent) {
-  if (e.isComposing) return
+function onEnter(e: KeyboardEvent | Event) {
+  // 输入法组合中（如中文候选）按 Enter 不应发送
+  if ((e as KeyboardEvent).isComposing) return
   e.preventDefault()
   handleSend()
 }

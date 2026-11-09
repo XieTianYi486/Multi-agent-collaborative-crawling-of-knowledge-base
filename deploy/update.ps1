@@ -38,9 +38,16 @@ scp $pkg "${Remote}:/tmp/kb_update.tar.gz"
 if ($LASTEXITCODE -ne 0) { throw "Upload failed, check network / SSH password" }
 
 Write-Host "==> 3/3 Extract and restart on server..." -ForegroundColor Cyan
-# 线上可能仍是旧版 update.sh（不含内容同步），因此上传后额外执行一次 sync_content.py，
-# 保证视频补录与配套资料入库在本轮生效；失败也不阻塞服务启动。
-ssh $Remote "bash /opt/kb/deploy/update.sh /tmp/kb_update.tar.gz && systemctl stop kb && (sudo -u kb env KB_APP_DIR=/opt/kb /opt/kb/backend/.venv/bin/python /opt/kb/deploy/sync_content.py || true) && systemctl restart kb"
+# update.sh 已包含解压、按需装依赖、内容同步与重启；这里只负责触发，并把远端输出直接显示出来
+ssh $Remote "bash /opt/kb/deploy/update.sh /tmp/kb_update.tar.gz" | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Remote update failed, see output above" }
+
+# 发布后校验：远端 index.html 必须引用本次构建的入口文件，避免“上传成功但没生效”
+$localEntry = (Select-String -Path (Join-Path $root "frontend\dist\index.html") -Pattern 'index-[A-Za-z0-9_-]+\.js').Matches[0].Value
+$remoteEntry = (ssh $Remote "grep -o 'index-[A-Za-z0-9_-]*\.js' /opt/kb/frontend/dist/index.html | head -1").Trim()
+if ($remoteEntry -notlike "*$localEntry*") {
+  throw "Verification failed: server serves $remoteEntry, local build is $localEntry"
+}
+Write-Host "    verified: $remoteEntry" -ForegroundColor Green
 
 Write-Host "Done." -ForegroundColor Green
