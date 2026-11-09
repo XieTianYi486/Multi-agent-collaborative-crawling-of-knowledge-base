@@ -71,3 +71,8 @@ backend/crawler/data/db/*
 # 本地调试输出
 vite_err.txt
 vite_out.txt
+
+# 部署打包产物（体积大，不含源码）
+/kb_deploy.tar.gz
+/*.tar.gz
+/*.zip

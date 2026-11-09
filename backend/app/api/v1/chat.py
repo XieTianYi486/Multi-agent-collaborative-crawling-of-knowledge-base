@@ -9,6 +9,7 @@ import json
 import logging
 import traceback as tb_module
 import uuid as uuid_lib
+from types import SimpleNamespace
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -18,6 +19,8 @@ from starlette.background import BackgroundTask
 
 from app.db.sqlite import get_db, SessionLocal
 from app.api.deps import get_current_active_user
+from app.core.exceptions import NotFoundException, ValidationException
+from app.core.rate_limit import rate_limit_chat
 from app.models.user import User
 from app.models.chat import ChatSession, ChatMessage, ChatLog
 from app.schemas.common import APIResponse, PaginatedData
@@ -32,6 +35,26 @@ from app.services.audit_service import add_audit_log
 
 router = APIRouter(prefix="/chat", tags=["问答交互"])
 logger = logging.getLogger(__name__)
+
+
+# ==================== 会话归属校验 ====================
+
+def _ensure_session_owned(db: Session, session_id: str, user_id: int) -> None:
+    """
+    校验会话存在且属于当前用户。
+
+    未校验归属会让用户通过传入他人 session_id 读取历史消息，
+    并把新消息写入他人会话（IDOR）。统一返回"不存在或无权访问"，
+    避免泄露他人会话是否存在。
+    """
+    owned = (
+        db.query(ChatSession.id)
+        .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
+        .first()
+    )
+    if owned is None:
+        raise NotFoundException("会话不存在或无权访问")
+
 
 
 # ==================== 问题侧敏感词拦截 ====================
@@ -60,7 +83,7 @@ def _check_question_sensitive(db: Session, question: str, user: User) -> bool:
 def ask_question(
     request: AskRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(rate_limit_chat),
 ):
     """
     同步问答接口
@@ -72,6 +95,10 @@ def ask_question(
     #    避免后续代码访问 detached User 触发 "not bound to a Session" 错误 ──
     user_id: int = current_user.id
     role_code: str = current_user.role.code if current_user.role else ""
+
+    # ── 会话归属校验：禁止读取/写入他人会话 ──
+    if request.session_id:
+        _ensure_session_owned(db, request.session_id, user_id)
 
     # ── 问题侧敏感词拦截：高危词直接拒答并审计留痕 ──
     if _check_question_sensitive(db, request.question, current_user):
@@ -180,7 +207,7 @@ def ask_question(
 async def ask_stream(
     request: AskRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(rate_limit_chat),
 ):
     """
     流式问答接口 (Server-Sent Events)
@@ -201,6 +228,10 @@ async def ask_stream(
     question: str = request.question
     category_ids: Optional[List[int]] = request.category_ids
     document_ids: Optional[List[int]] = request.document_ids
+
+    # ── 会话归属校验：禁止读取/写入他人会话 ──
+    if request.session_id:
+        _ensure_session_owned(db, request.session_id, user_id)
 
     # ── 问题侧敏感词拦截：高危词直接拒答并审计留痕（以 SSE 协议返回）──
     if _check_question_sensitive(db, question, current_user):
@@ -248,6 +279,19 @@ async def ask_stream(
         content=question,
     )
     db.add(user_msg)
+
+    # ── 敏感词快照：db 关闭前一次性加载，供流式逐段脱敏（避免逐 token 查库）──
+    sensitive_words = [
+        SimpleNamespace(
+            word=w.word, level=w.level, action=w.action,
+            replacement=w.replacement,
+        )
+        for w in SensitiveService.get_enabled_words(db)
+    ]
+    # 滑动窗口回退长度：保留"最长敏感词 - 1"个字符，保证跨 token 的敏感词
+    # 在完整出现后才做替换，不会因分片提前泄露
+    keep_chars = max(0, max((len(w.word) for w in sensitive_words), default=0) - 1)
+
     db.commit()
     db.close()
 
@@ -255,7 +299,34 @@ async def ask_stream(
     stream_result = {"full_answer": "", "sources": [], "ok": False, "status": "", "latency": {}, "usage": {}}
 
     async def event_stream():
-        """纯 SSE 流式生成器 —— 不涉及任何数据库操作"""
+        """纯 SSE 流式生成器 —— 不涉及数据库操作；token 先脱敏再推送"""
+        buffer = ""          # 尚未脱敏的尾部窗口
+        hits_all: list = []  # 本次流式回答命中的敏感词（按词聚合）
+
+        def mask_and_record(text: str) -> str:
+            """对一段文本脱敏并累计命中记录"""
+            if not text or not sensitive_words:
+                return text
+            masked, hits = SensitiveService.mask_text(text, sensitive_words)
+            for h in hits:
+                existing = next(
+                    (x for x in hits_all if x["word"] == h["word"]), None
+                )
+                if existing is None:
+                    hits_all.append(dict(h))
+                else:
+                    existing["count"] += h["count"]
+            return masked
+
+        def flush_buffer() -> str:
+            """把滑动窗口中的剩余内容脱敏后返回（无内容时返回空串）"""
+            nonlocal buffer
+            if not buffer:
+                return ""
+            out = mask_and_record(buffer)
+            buffer = ""
+            return out
+
         try:
             async for event in chat_service.ask_stream(
                 question=question,
@@ -265,39 +336,60 @@ async def ask_stream(
                 chat_history=chat_history,
             ):
                 if event["type"] == "token":
-                    stream_result["full_answer"] += event["data"]
-                    yield f"event: token\ndata: {json.dumps({'token': event['data']}, ensure_ascii=False)}\n\n"
+                    buffer += event["data"]
+                    if keep_chars:
+                        if len(buffer) <= keep_chars:
+                            continue  # 尾部不足一个最长敏感词，暂不推送
+                        safe, buffer = buffer[:-keep_chars], buffer[-keep_chars:]
+                    else:
+                        safe, buffer = buffer, ""
+                    safe = mask_and_record(safe)
+                    if not safe:
+                        continue
+                    stream_result["full_answer"] += safe
+                    yield f"event: token\ndata: {json.dumps({'token': safe}, ensure_ascii=False)}\n\n"
 
                 elif event["type"] == "sources":
+                    # 先冲刷窗口尾部，保证正文 token 全部在 sources 之前推送
+                    tail = flush_buffer()
+                    if tail:
+                        stream_result["full_answer"] += tail
+                        yield f"event: token\ndata: {json.dumps({'token': tail}, ensure_ascii=False)}\n\n"
                     stream_result["sources"] = event["data"]
                     yield f"event: sources\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
 
                 elif event["type"] == "done":
                     event_data = event["data"]
+
+                    # 先冲刷滑动窗口，保证最后一段回答也经过脱敏
+                    tail = flush_buffer()
+                    if tail:
+                        stream_result["full_answer"] += tail
+                        yield f"event: token\ndata: {json.dumps({'token': tail}, ensure_ascii=False)}\n\n"
+
                     if event_data.get("status") == "not_found":
-                        stream_result["full_answer"] = event_data["answer"]
+                        answer = mask_and_record(event_data.get("answer", ""))
+                        stream_result["full_answer"] = answer
+                        event_data["answer"] = answer
                     stream_result["status"] = event_data.get("status", "")
                     stream_result["latency"] = event_data.get("latency", {})
                     stream_result["usage"] = event_data.get("usage", {})
 
-                    # ── 敏感词脱敏（完成后对完整回答做合规过滤）──
-                    masked = stream_result["full_answer"]
-                    hits = []
-                    if masked:
+                    # ── 命中敏感词时统一写一条审计日志（不逐 token 落库）──
+                    if hits_all:
                         sdb = SessionLocal()
                         try:
-                            masked, hits = SensitiveService.mask_answer(
-                                masked, sdb,
-                                user_id=user_id, username=username,
+                            add_audit_log(
+                                db=sdb, module="sensitive", action="sensitive_hit",
+                                status="masked", user_id=user_id, username=username,
+                                target_type="chat", detail={"hits": hits_all},
                             )
                             sdb.commit()
                         finally:
                             sdb.close()
-                        stream_result["full_answer"] = masked
-                        if hits:
-                            yield f"event: sensitive\ndata: {json.dumps({'full_answer': masked, 'hits': hits}, ensure_ascii=False)}\n\n"
+                        yield f"event: sensitive\ndata: {json.dumps({'full_answer': stream_result['full_answer'], 'hits': hits_all}, ensure_ascii=False)}\n\n"
 
-                    event_data["full_answer"] = masked
+                    event_data["full_answer"] = stream_result["full_answer"]
                     stream_result["ok"] = True
                     yield f"event: done\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
 
@@ -509,25 +601,25 @@ def get_session_messages(
 def submit_feedback(
     request: FeedbackRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(rate_limit_chat),
 ):
-    """提交答案反馈（通过 session_id 关联到最近的问答日志）"""
-    # 优先查找该会话中最近的日志
+    """提交答案反馈（必须关联到本人会话中最近的一条问答日志）"""
+    if not request.session_id:
+        raise ValidationException("缺少 session_id，无法关联问答记录")
+
+    # 会话必须属于当前用户，否则拒绝（防止借他人 session 改写反馈）
+    _ensure_session_owned(db, request.session_id, current_user.id)
+
     log = db.query(ChatLog).filter(
         ChatLog.user_id == current_user.id,
         ChatLog.session_id == request.session_id,
     ).order_by(ChatLog.created_at.desc()).first()
+    if log is None:
+        raise NotFoundException("未找到可反馈的问答记录")
 
-    # 如果找不到指定会话的日志，回退到用户最近的日志
-    if not log:
-        log = db.query(ChatLog).filter(
-            ChatLog.user_id == current_user.id,
-        ).order_by(ChatLog.created_at.desc()).first()
-
-    if log:
-        log.feedback = request.feedback
-        log.feedback_reason = request.reason
-        db.flush()
+    log.feedback = request.feedback
+    log.feedback_reason = request.reason
+    db.flush()
     return APIResponse(code=0, message="感谢您的反馈")
 
 
@@ -546,11 +638,8 @@ def _get_security_level(role_code: str) -> int:
         dept_admin      → 3 (机密)
         employee        → 1 (公开)
     """
-    if role_code in ("super_admin", "knowledge_admin"):
-        return 4
-    if role_code == "dept_admin":
-        return 3
-    return 1  # employee 及未知角色默认仅看公开
+    from app.core.security import get_max_security_level
+    return get_max_security_level(role_code)
 
 
 def _generate_session_id() -> str:

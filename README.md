@@ -34,8 +34,14 @@
 - **幻觉抑制与拒答**：严格基于入库资料回答，不用自身通用知识；无相关资料时主动拒答
 - **流式输出**（SSE）
 
+### 🎬 视频专区（B 站精选）
+- 独立视频专区页面：按 ESP32 / ESP-IDF / Arduino / FreeRTOS / 树莓派 / 电子电路等方向精选入门经典课程
+- 首轮预置 14 个已校验的 B 站视频，支持关键词搜索、分类与难度筛选
+- **只存元数据**（BV 号 / 标题 / 封面 / UP 主 / 时长 / 播放量快照），播放通过 B 站官方 iframe，不转存视频文件
+- 管理端支持新增、编辑、排序、上下架与删除；播放量与封面为手动维护快照，不会自动刷新
+
 ### 🔐 权限管控
-- RBAC 四级角色（普通员工 / 部门管理员 / 知识库管理员 / 超级管理员）
+- RBAC 角色（学生 / 老师 / 院系管理员 / 知识库管理员 / 超级管理员）
 - JWT Token 认证 + bcrypt 密码哈希
 - 文档密级与用户角色自动匹配的检索过滤
 
@@ -88,7 +94,7 @@
 | 认证 | JWT + Passlib + bcrypt | Token 认证与密码哈希 |
 | 缓存 | cachetools + diskcache | 内存 + 磁盘双层缓存 |
 | 日志 | Loguru | 结构化日志 |
-| 测试 | PyTest + pytest-asyncio | 108 用例 |
+| 测试 | PyTest + pytest-asyncio | 128 用例 |
 
 **前端（frontend/）**
 
@@ -109,11 +115,11 @@
 ```
 ├── backend/
 │   ├── app/                      # FastAPI 主应用
-│   │   ├── api/v1/               # auth / chat / documents / admin / crawler 路由
+│   │   ├── api/v1/               # auth / chat / documents / admin / crawler / videos 路由
 │   │   ├── core/                 # 配置（Pydantic Settings）/ JWT / 异常
-│   │   ├── models/               # SQLAlchemy 模型（用户/文档/分类/分块/会话）
-│   │   ├── schemas/              # Pydantic 请求/响应模型
-│   │   ├── services/             # 业务层（认证/问答/文档）
+│   │   ├── models/               # SQLAlchemy 模型（用户/文档/分类/分块/会话/**视频**）
+│   │   ├── schemas/              # Pydantic 请求/响应模型（含 video）
+│   │   ├── services/             # 业务层（认证/问答/文档/视频种子）
 │   │   ├── db/                   # SQLAlchemy 引擎 / 向量库客户端 / 缓存
 │   │   ├── rag/                  # 🔥 RAG 引擎
 │   │   │   ├── chunker/          # 语义分块
@@ -126,8 +132,8 @@
 │   │   │   ├── ocr.py            # RapidOCR 扫描件识别
 │   │   │   └── ingestion.py      # 文档入库流水线
 │   │   ├── tasks/                # 后台线程（文档处理）
-│   │   ├── eval/                 # 评测集与实验脚本（论文第 6 章，74 题）
-│   │   ├── tests/                # 单元测试（108 用例）
+│   │   ├── eval/                 # 评测集与实验脚本（论文第 6 章，74 题：68 检索 + 6 拒答）
+│   │   ├── tests/                # 单元测试（128 用例）
 │   │   └── main.py               # 应用入口
 │   ├── crawler/                  # 🕷️ 多智能体爬取子系统（独立批处理包）
 │   │   ├── config/               # sites.yaml 站点档案 + models.yaml 模型档位 + prompts/
@@ -151,7 +157,8 @@
 │       ├── views/
 │       │   ├── auth/             # 登录 / 注册 / 个人中心
 │       │   ├── chat/             # 对话问答界面
-│       │   └── admin/            # 管理后台 13 页（文档/审核/用户/统计/日志/**爬取中心**等）
+│       │   ├── videos/           # 🎬 视频专区（B 站精选，iframe 播放）
+│       │   └── admin/            # 管理后台 14 页（文档/审核/用户/统计/日志/爬取中心/**视频管理**等）
 │       ├── components/           # 公共组件
 │       ├── store/                # Pinia（auth / chat / theme）
 │       └── router/               # 路由与权限守卫
@@ -256,6 +263,8 @@ python rebuild_indexes.py     # 重新嵌入全部分块（约 ¥10-15，需十�
 **其他说明**：
 - `backend/uploads/` 原文件未随仓库分发——个别本地上传文档的"原文下载"功能不可用，**不影响问答检索**（爬虫文档均自带原文链接）
 - `.env`（API Key）属机密不随仓库分发，请自行配置或向管理员索取
+- 若部署环境走 ChromaDB 且沿用旧集合 `labor_law_docs`：先执行 `python scripts/migrate_collection_name.py` 复制向量到 `teaching_kb_docs`，否则检索为空（本机 FAISS 后端无需处理）
+- 问答、AI 助手、TTS 的限流为**进程内令牌桶**，多进程/多实例部署时需替换为 Redis 等共享存储才能全局生效
 
 ---
 
@@ -295,6 +304,14 @@ crawl（必需：遍历站点→适配器→三层去重→落盘）
 | GET | `/api/v1/chat/sessions` | 会话列表 |
 | POST | `/api/v1/documents/upload` | 上传文档 |
 | GET | `/api/v1/documents` | 文档列表 |
+| GET | `/api/v1/videos` | 视频列表（已上架，支持关键词/分类/难度） |
+| GET | `/api/v1/videos/categories` | 视频分类及数量 |
+| GET | `/api/v1/videos/{id}` | 视频详情 |
+| GET | `/api/v1/admin/videos` | 视频管理列表（管理员） |
+| POST | `/api/v1/admin/videos` | 新增视频（管理员） |
+| PUT | `/api/v1/admin/videos/{id}` | 编辑视频（管理员） |
+| PUT | `/api/v1/admin/videos/{id}/status` | 上架/下架（管理员） |
+| DELETE | `/api/v1/admin/videos/{id}` | 删除视频（管理员） |
 | GET | `/api/v1/admin/stats/overview` | 统计概览 |
 | GET | `/api/v1/crawler/overview` | 爬取中心总览（管理员） |
 | GET | `/api/v1/crawler/sites` | 站点采集状态 |
@@ -305,6 +322,8 @@ crawl（必需：遍历站点→适配器→三层去重→落盘）
 | GET | `/api/health` | 健康检查 |
 
 > 完整 API 文档见 http://localhost:8001/docs
+>
+> 视频专区只保存 B 站元数据，播放走官方 iframe；播放量与封面是手动维护的快照，不会自动刷新。
 
 ---
 
@@ -316,7 +335,7 @@ crawl（必需：遍历站点→适配器→三层去重→落盘）
 | 前端端口 | 5173 | Vite 开发服务器 |
 | 向量维度 | 1536 | DashScope text-embedding-v2 |
 | 分块大小 | 512 token | 语义分块 |
-| 召回 Top-K | 10 | 混合检索召回数量 |
+| 召回 Top-K | 20 → 50 → 5 | 向量/BM25 各召回 20，融合 50，重排后保留 5 |
 | JWT 过期 | 24h | Token 有效期 |
 | 爬取预算闸门 | ¥2.0/日 | LLM 步骤超预算自动降级规则管线 |
 | 定时爬取 | 每日 08:30 | Windows 任务计划 |
@@ -325,7 +344,7 @@ crawl（必需：遍历站点→适配器→三层去重→落盘）
 
 ## 🧪 评测与实验
 
-毕业设计论文第 6 章实验数据由 `backend/eval/` 产出（74 道评测题 + 检索指标 Recall/MRR/nDCG + 端到端 LLM judge），详见 [backend/eval/README.md](backend/eval/README.md)。
+毕业设计论文第 6 章实验数据由 `backend/eval/` 产出（74 道评测题：68 道检索题 + 6 道应拒答题，含检索指标 Recall/MRR/nDCG 与端到端 LLM judge），详见 [backend/eval/README.md](backend/eval/README.md)。
 
 ```bash
 cd backend
@@ -342,7 +361,7 @@ python eval/run_eval.py --mode e2e --sample-size 40   # L3 端到端（建议抽
 
 ```bash
 cd backend
-python -m pytest -v        # 108 用例全绿；测试自动隔离到 tests/.tmp_test/test.db
+python -m pytest -v        # 128 用例全绿；测试自动隔离到 tests/.tmp_test/test.db
 ```
 
 ### Claude Code 命令

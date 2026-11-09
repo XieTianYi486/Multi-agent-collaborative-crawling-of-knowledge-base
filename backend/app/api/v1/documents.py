@@ -7,10 +7,14 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.sqlite import get_db
-from app.api.deps import get_current_active_user, require_knowledge_admin
+from app.api.deps import (
+    get_current_active_user, require_knowledge_admin, require_document_contributor,
+)
+from app.core.security import get_max_security_level, is_knowledge_admin
 from app.models.user import User
 from app.models.document import Document, Category
 from app.schemas.common import APIResponse, PaginatedData
@@ -35,15 +39,21 @@ async def upload_document(
     review_mode: Optional[str] = Form(default="pending"),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_knowledge_admin),
+    current_user: User = Depends(require_document_contributor),
 ):
     """
     上传文档文件
     支持 PDF / DOCX / XLSX / MD / TXT 格式
 
     review_mode: pending=提交审核（默认）, draft=保存草稿
+    教师投稿一律进入待审核（由知识库管理员审核通过后才可被检索引用）。
     """
     import json
+    role_code = current_user.role.code if current_user.role else ""
+    is_teacher_submission = role_code == "teacher"
+    if is_teacher_submission:
+        review_mode = "pending"
+
     tag_list = json.loads(tags) if tags else []
 
     doc = DocumentService.create_document(
@@ -80,19 +90,36 @@ def list_documents(
     file_type: Optional[str] = None,
     status: Optional[int] = None,
     review_status: Optional[int] = None,
+    sort: str = Query(default="latest", description="排序：latest/oldest/title/size_desc/size_asc"),
+    ids: Optional[str] = Query(default=None, description="逗号分隔的文档ID（收藏夹筛选）"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """获取文档列表（分页 + 筛选）"""
-    # 普通员工仅可见"已发布 + 已通过审核"的文档，防止未审核内容泄露
+    """获取文档列表（分页 + 筛选 + 排序）"""
+    # 普通角色仅可见"已发布 + 已通过审核 + 密级不超上限"的文档
     role_code = current_user.role.code if current_user.role else "employee"
-    is_admin = role_code in ("super_admin", "knowledge_admin")
+    is_admin = is_knowledge_admin(role_code)
     published_only = not is_admin
+    max_level = get_max_security_level(role_code)
+
+    # 收藏夹 ID 列表：非法片段忽略；为空表示无匹配结果
+    document_ids = None
+    if ids is not None:
+        document_ids = [
+            int(part) for part in ids.split(",") if part.strip().isdigit()
+        ]
 
     items, total = DocumentService.get_documents(
         db, page, page_size, keyword, category_id,
         file_type, status, review_status=review_status,
-        published_only=published_only,
+        max_security_level=None if is_admin else max_level,
+        published_only=published_only, sort=sort,
+        document_ids=document_ids,
+    )
+
+    # 正文命中片段（仅检索时返回，用于列表预览）
+    snippets = DocumentService.get_match_snippets(
+        db, [doc.id for doc in items], keyword
     )
 
     # 转为响应模型
@@ -109,6 +136,8 @@ def list_documents(
             publish_date=doc.publish_date,
             expire_date=doc.expire_date, tags=doc.tags,
             chunk_count=doc.chunk_count, created_by=doc.created_by,
+            source_url=doc.source_url,
+            match_snippet=snippets.get(doc.id),
             created_at=doc.created_at, updated_at=doc.updated_at,
         ).model_dump())
 
@@ -116,6 +145,73 @@ def list_documents(
         code=0,
         message="success",
         data=PaginatedData.from_query(doc_list, total, page, page_size).model_dump()
+    )
+
+
+@router.get("/mine", response_model=APIResponse, summary="我的投稿")
+def list_my_documents(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    review_status: Optional[int] = Query(default=None, description="0草稿/1待审核/2已通过/3已驳回"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """当前用户上传的文档（含待审核/已驳回），供教师跟踪投稿审核进度。"""
+    query = db.query(Document).filter(Document.created_by == current_user.id)
+    if review_status is not None:
+        query = query.filter(Document.review_status == review_status)
+
+    total = query.count()
+    items = (
+        query.order_by(Document.created_at.desc(), Document.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    doc_list = [
+        DocumentResponse(
+            id=doc.id, title=doc.title, file_name=doc.file_name,
+            file_size=doc.file_size, file_type=doc.file_type,
+            category_id=doc.category_id,
+            category_name=doc.category.name if doc.category else None,
+            version=doc.version, security_level=doc.security_level,
+            status=doc.status, review_status=doc.review_status,
+            review_comment=doc.review_comment, reviewed_at=doc.reviewed_at,
+            publish_date=doc.publish_date,
+            expire_date=doc.expire_date, tags=doc.tags,
+            chunk_count=doc.chunk_count, created_by=doc.created_by,
+            source_url=doc.source_url,
+            created_at=doc.created_at, updated_at=doc.updated_at,
+        ).model_dump()
+        for doc in items
+    ]
+    return APIResponse(
+        code=0, message="success",
+        data=PaginatedData.from_query(doc_list, total, page, page_size).model_dump()
+    )
+
+
+@router.post("/{doc_id}/resubmit-review", response_model=APIResponse, summary="重新提交审核")
+def resubmit_review(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_document_contributor),
+):
+    """投稿人将草稿或被驳回的文档重新提交审核。"""
+    doc = DocumentService.get_document(db, doc_id)
+    role_code = current_user.role.code if current_user.role else ""
+    if doc.created_by != current_user.id and not is_knowledge_admin(role_code):
+        return APIResponse(code=4003, message="只能重新提交本人上传的文档")
+    if doc.review_status not in (0, 3):
+        return APIResponse(code=1, message="仅草稿或被驳回的文档可重新提交审核")
+
+    doc = DocumentService.review_document(
+        db, doc_id, "submit", reviewer_id=current_user.id, comment=None,
+    )
+    return APIResponse(
+        code=0, message="已重新提交审核",
+        data={"document_id": doc.id, "review_status": doc.review_status},
     )
 
 
@@ -127,6 +223,8 @@ def get_document(
 ):
     """获取单个文档详情"""
     doc = DocumentService.get_document(db, doc_id)
+    role_code = current_user.role.code if current_user.role else "employee"
+    DocumentService.ensure_document_visible(doc, role_code)
     cat_name = doc.category.name if doc.category else None
     return APIResponse(
         code=0,
@@ -141,6 +239,7 @@ def get_document(
             publish_date=doc.publish_date,
             expire_date=doc.expire_date, tags=doc.tags,
             chunk_count=doc.chunk_count, created_by=doc.created_by,
+            source_url=doc.source_url,
             created_at=doc.created_at, updated_at=doc.updated_at,
         ).model_dump()
     )
@@ -229,6 +328,8 @@ def get_document_versions(
 ):
     """获取文档的所有历史版本"""
     doc = DocumentService.get_document(db, doc_id)
+    role_code = current_user.role.code if current_user.role else "employee"
+    DocumentService.ensure_document_visible(doc, role_code)
     versions = [
         DocumentVersionResponse(
             id=v.id, document_id=v.document_id, version=v.version,
@@ -247,24 +348,44 @@ def get_category_tree(
     current_user: User = Depends(get_current_active_user),
 ):
     """获取文档分类树（多级嵌套结构）"""
+    role_code = current_user.role.code if current_user.role else "employee"
+    is_admin = is_knowledge_admin(role_code)
+
+    # 分类计数必须与列表可见范围一致，避免通过数量泄露未审核/高密级文档
+    count_query = db.query(Document.category_id, func.count(Document.id))
+    if not is_admin:
+        count_query = count_query.filter(
+            Document.status == 1,
+            Document.review_status == 2,
+            Document.security_level <= get_max_security_level(role_code),
+        )
+    counts = {
+        cat_id: count for cat_id, count in count_query.group_by(Document.category_id).all()
+        if cat_id is not None
+    }
+
     categories = db.query(Category).order_by(Category.sort_order).all()
-    tree = _build_category_tree(categories)
+    tree = _build_category_tree(categories, counts)
     return APIResponse(code=0, message="success", data=tree)
 
 
-def _build_category_tree(categories: list[Category], parent_id: int = 0) -> list[dict]:
+def _build_category_tree(
+    categories: list[Category],
+    counts: dict[int, int],
+    parent_id: int = 0,
+) -> list[dict]:
     """递归构建分类树"""
     result = []
     for cat in categories:
         if cat.parent_id == parent_id:
-            children = _build_category_tree(categories, cat.id)
+            children = _build_category_tree(categories, counts, cat.id)
             result.append({
                 "id": cat.id,
                 "name": cat.name,
                 "parent_id": cat.parent_id,
                 "sort_order": cat.sort_order,
                 "description": cat.description,
-                "document_count": len(cat.documents),
+                "document_count": counts.get(cat.id, 0),
                 "children": children,
             })
     return result
@@ -344,6 +465,8 @@ def get_document_content(
     用于前端查看文档原文
     """
     doc = DocumentService.get_document(db, doc_id)
+    role_code = current_user.role.code if current_user.role else "employee"
+    DocumentService.ensure_document_visible(doc, role_code)
 
     # 读取文件内容：文本格式直接读取，二进制格式调用解析器
     from app.rag.ingestion import DocumentParser
@@ -375,6 +498,7 @@ def get_document_content(
             "file_type": doc.file_type,
             "content": content,
             "file_size": doc.file_size,
+            "source_url": doc.source_url,
         }
     )
 
@@ -448,12 +572,47 @@ def get_review_queue(
             publish_date=doc.publish_date,
             expire_date=doc.expire_date, tags=doc.tags,
             chunk_count=doc.chunk_count, created_by=doc.created_by,
+            source_url=doc.source_url,
             created_at=doc.created_at, updated_at=doc.updated_at,
         ).model_dump())
     return APIResponse(
         code=0, message="success",
         data=PaginatedData.from_query(doc_list, total, page, page_size).model_dump()
     )
+
+
+def _after_review(
+    db: Session,
+    doc: Document,
+    action: str,
+    comment: Optional[str],
+    actor_id: int,
+) -> None:
+    """审核后的通知与补采联动：通知投稿人；通过时自动完成匹配的补采需求。"""
+    from app.services.collection_service import auto_complete_requests
+    from app.services.notification_service import notify
+
+    if doc.created_by and doc.created_by != actor_id:
+        if action == "approve":
+            notify(
+                db, doc.created_by, "document", "投稿审核通过",
+                f"《{doc.title}》已通过审核并发布，问答中可被检索引用。",
+                "/documents",
+            )
+        elif action == "reject":
+            reason = f"驳回原因：{comment}" if comment else "未填写驳回意见"
+            notify(
+                db, doc.created_by, "document", "投稿被驳回",
+                f"《{doc.title}》未通过审核，{reason}。可在「我的投稿」查看并修改后重新提交。",
+                "/documents",
+            )
+
+    if action == "approve":
+        try:
+            auto_complete_requests(db, doc)
+        except Exception:
+            db.rollback()
+    db.commit()
 
 
 @admin_review_router.post("/{doc_id}/review", response_model=APIResponse, summary="文档审核")
@@ -493,6 +652,7 @@ def review_document(
         "submit": "已重新提交审核",
         "recall": "已撤回为草稿",
     }[action]
+    _after_review(db, doc, action, comment, current_user.id)
     return APIResponse(
         code=0,
         message=msg,
@@ -535,6 +695,7 @@ def batch_review_document(
                 detail={"title": doc.title},
             )
             success += 1
+            _after_review(db, doc, action, comment, current_user.id)
         except Exception:
             continue
     verb = "通过" if action == "approve" else "驳回"

@@ -4,14 +4,20 @@
       <div class="header-left">
         <el-icon class="header-icon" :size="24"><OfficeBuilding /></el-icon>
         <h2>部门管理</h2>
-        <el-tag size="small" round type="info">{{ departments.length }} 个部门</el-tag>
+        <el-tag size="small" round type="info">{{ filteredDepartments.length }} 个部门</el-tag>
       </div>
       <el-button type="primary" :icon="Plus" @click="showCreateDialog">新建部门</el-button>
     </div>
 
+    <el-tabs v-model="activeType" class="dept-tabs">
+      <el-tab-pane label="全部部门" name="all" />
+      <el-tab-pane label="教学单位" name="teaching" />
+      <el-tab-pane label="班级" name="class" />
+    </el-tabs>
+
     <div v-loading="loading" class="dept-grid">
-      <template v-if="departments.length > 0">
-        <div v-for="dept in departments" :key="dept.id" class="dept-card">
+      <template v-if="filteredDepartments.length > 0">
+        <div v-for="dept in filteredDepartments" :key="dept.id" class="dept-card">
           <div class="dept-avatar">
             <el-icon :size="24"><OfficeBuilding /></el-icon>
           </div>
@@ -73,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { Plus, OfficeBuilding, User, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -82,6 +88,11 @@ import client from '@/api/client'
 const loading = ref(false)
 const saving = ref(false)
 const departments = ref<any[]>([])
+const activeType = ref<'all' | 'teaching' | 'class'>('all')
+const filteredDepartments = computed(() => {
+  if (activeType.value === 'all') return departments.value
+  return departments.value.filter((d) => (d.dept_type || 'teaching') === activeType.value)
+})
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
@@ -103,7 +114,7 @@ function showCreateDialog() {
   editingId.value = null
   form.name = ''
   form.description = ''
-  form.dept_type = 'teaching'
+  form.dept_type = activeType.value === 'class' ? 'class' : 'teaching'
   dialogVisible.value = true
 }
 
@@ -157,6 +168,9 @@ onMounted(loadData)
 .header-left { display: flex; align-items: center; gap: 10px; }
 .header-icon { color: var(--color-primary); }
 .header-left h2 { font-size: 20px; font-weight: 700; color: var(--color-text-primary); margin: 0; }
+
+.dept-tabs { margin-bottom: 16px; }
+.dept-tabs :deep(.el-tabs__header) { margin-bottom: 16px; }
 
 .dept-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .empty-state { grid-column: 1 / -1; }

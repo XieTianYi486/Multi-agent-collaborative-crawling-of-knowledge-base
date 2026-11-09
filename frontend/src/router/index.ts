@@ -42,10 +42,22 @@ const router = createRouter({
           meta: { title: '知识库文档' },
         },
         {
+          path: 'videos',
+          name: 'Videos',
+          component: () => import('@/views/videos/VideoPage.vue'),
+          meta: { title: '视频专区' },
+        },
+        {
           path: 'tickets',
           name: 'MyTickets',
           component: () => import('@/views/tickets/MyTicketsPage.vue'),
           meta: { title: '我的工单' },
+        },
+        {
+          path: 'my-collections',
+          name: 'MyCollections',
+          component: () => import('@/views/collection/MyCollectionsPage.vue'),
+          meta: { title: '我的补采' },
         },
         {
           path: 'admin',
@@ -62,6 +74,12 @@ const router = createRouter({
           name: 'AdminCategories',
           component: () => import('@/views/admin/CategoryPage.vue'),
           meta: { title: '分类管理', admin: true },
+        },
+        {
+          path: 'admin/videos',
+          name: 'AdminVideos',
+          component: () => import('@/views/admin/VideoPage.vue'),
+          meta: { title: '视频管理', admin: true },
         },
         {
           path: 'admin/users',
@@ -98,6 +116,12 @@ const router = createRouter({
           name: 'AdminCrawl',
           component: () => import('@/views/admin/CrawlPage.vue'),
           meta: { title: '数据中心', admin: true },
+        },
+        {
+          path: 'admin/collection',
+          name: 'AdminCollection',
+          component: () => import('@/views/admin/CollectionPage.vue'),
+          meta: { title: '补采闭环', admin: true },
         },
         {
           path: 'admin/announcements',

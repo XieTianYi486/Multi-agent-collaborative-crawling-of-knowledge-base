@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # ==================== 应用基础配置 ====================
     APP_NAME: str = "人工智能学院教学知识库"
     APP_VERSION: str = "1.0.0"
-    APP_DESCRIPTION: str = "多智能体协作爬取的专业知识库（ESP32/树莓派/嵌入式开发教学资料检索）"
+    APP_DESCRIPTION: str = "多智能体协作爬取的嵌入式开发教学知识库（ESP32 / ESP-IDF / 树莓派 / 电子电路 / 物联网教学资料检索）"
     DEBUG: bool = True
     SECRET_KEY: str = "change-this-to-a-random-secret-key-in-production"
 
@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = ""  # 默认按 provider 自动填充
     LLM_TEMPERATURE: float = 0.1
     LLM_MAX_TOKENS: int = 2048
+    # qwen3 系模型是否启用思考模式；关闭可显著降低首字延迟（仅对 dashscope 的 qwen3 模型生效）
+    LLM_ENABLE_THINKING: bool = True
 
     # ==================== 向量嵌入（支持 DashScope / DeepSeek 远程 + ONNX 本地）====================
     # provider: dashscope=阿里云百炼 text-embedding-v2, deepseek=DeepSeek API (不公开)
@@ -64,9 +66,17 @@ class Settings(BaseSettings):
     FUSION_TOP_K: int = 50        # 融合后候选集大小
     RERANK_CANDIDATES: int = 20   # 送入重排序器的候选数量
     RERANK_TOP_N: int = 5         # 重排序后最终保留数量
+    # 查询改写的最长等待时间（毫秒）：超时直接用原问题检索，保证首字延迟有上限
+    QUERY_REWRITE_TIMEOUT_MS: int = 1200
+    # 改写策略：conditional=仅短问句/指代问句/带历史时改写（省时省钱），always=全量，off=关闭
+    QUERY_REWRITE_MODE: str = "conditional"
+    QUERY_REWRITE_MIN_CHARS: int = 16  # 条件改写：问题长度小于该值时触发
     SIMILARITY_THRESHOLD: float = 0.5  # 相似度阈值（低于此值拒答）
-    VECTOR_WEIGHT: float = 0.5    # 向量检索融合权重
-    BM25_WEIGHT: float = 0.5      # BM25 检索融合权重
+    # 融合策略：weighted=最大值归一化加权；rrf=倒数排名融合（对分数尺度更稳健）
+    FUSION_STRATEGY: str = "weighted"
+    RRF_K: int = 60               # RRF 平滑常数
+    VECTOR_WEIGHT: float = 0.5    # 向量检索融合权重（weighted 策略生效）
+    BM25_WEIGHT: float = 0.5      # BM25 检索融合权重（weighted 策略生效）
 
     # ==================== 文档分块配置 ====================
     CHUNK_SIZE: int = 512         # 分块大小（token 估算）
@@ -117,15 +127,13 @@ class Settings(BaseSettings):
     # ==================== 知识审核发布 ====================
     DOCUMENT_REVIEW_ENABLED: bool = True  # 是否启用"草稿->待审核->已发布"审核发布流
 
-    # ==================== AI 导员 ====================
-    COUNSELOR_ENABLED: bool = True        # 是否启用 AI 导员悬浮入口
-    # 导员知识库回答模式：full=全量条款注入（小知识库，命中率高、免调参）；
-    #                  retrieval=向量+BM25 混合检索 + 阈值判定（知识库变大后使用）
-    COUNSELOR_CONTEXT_MODE: str = "full"
-    COUNSELOR_MAX_CONTEXT_CHARS: int = 80000  # 全量注入上下文长度告警阈值（超出说明该改回检索）
-    COUNSELOR_TOP_K: int = 6              # 导员知识库检索返回的条款数量
-    COUNSELOR_MIN_SCORE: float = 0.3      # 导员知识库命中阈值（条款绝对余弦相似度，低于此值视为未命中，转人设兜底）
-    COUNSELOR_KB_DIR: str = str(BASE_DIR / "data" / "counselor_kb")  # 导员知识库原始文档目录
+    # ==================== AI 助手 ====================
+    COUNSELOR_ENABLED: bool = True        # 是否启用悬浮 AI 助手入口（沿用 counselor 模块名）
+
+    # ==================== 接口限流 ====================
+    RATE_LIMIT_ENABLED: bool = True   # 是否启用进程内令牌桶限流
+    RATE_LIMIT_PER_MINUTE: int = 30   # 每个用户/凭证每分钟允许的请求数
+    RATE_LIMIT_BURST: int = 10        # 令牌桶容量（允许的瞬时突发请求数）
 
     # ==================== 日志配置 ====================
     LOG_LEVEL: str = "INFO"
@@ -136,7 +144,7 @@ class Settings(BaseSettings):
     # chroma: 强制 ChromaDB；faiss: 强制 FAISS
     VECTOR_BACKEND: str = "auto"
     CHROMA_PERSIST_DIR: str = str(BASE_DIR / "chroma_data")
-    CHROMA_COLLECTION_NAME: str = "labor_law_docs"
+    CHROMA_COLLECTION_NAME: str = "teaching_kb_docs"
 
     # ==================== 初始化目录 ====================
     def __init__(self, **kwargs):
@@ -144,7 +152,7 @@ class Settings(BaseSettings):
         # 确保必要的目录存在
         for dir_path in [self.UPLOAD_DIR, self.CHROMA_PERSIST_DIR,
                          self.CACHE_DIR, self.LOG_DIR,
-                         str(BASE_DIR / "data"), self.COUNSELOR_KB_DIR]:
+                         str(BASE_DIR / "data")]:
             os.makedirs(dir_path, exist_ok=True)
 
     model_config = dict(

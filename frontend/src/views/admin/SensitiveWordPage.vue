@@ -25,6 +25,45 @@
       title="脱敏规则：登录问答时，AI 回答中命中敏感词将被自动替换，并写入审计日志。级别 3（高危）命中将记录为拦截。"
     />
 
+    <!-- 敏感词命中测试 -->
+    <el-card class="tester-card" shadow="never">
+      <div class="tester-title">
+        <el-icon :size="16"><Search /></el-icon>
+        <span>敏感词命中测试</span>
+        <el-tag size="small" type="info" effect="plain">{{ enabledWords.length }} 个启用词</el-tag>
+      </div>
+      <el-input
+        v-model="testText"
+        type="textarea"
+        :rows="4"
+        maxlength="500"
+        show-word-limit
+        placeholder="输入一段文本，实时检测命中的敏感词并高亮显示..."
+      />
+      <div class="tester-result">
+        <template v-if="testText">
+          <div class="tester-legend">
+            <span>命中 <b>{{ testHits.length }}</b> 处</span>
+            <el-tag
+              v-for="(h, i) in uniqueHits"
+              :key="i"
+              size="small"
+              :type="levelType(h.level)"
+              effect="plain"
+            >{{ h.word }} · {{ levelText(h.level) }}</el-tag>
+            <span v-if="testHits.length === 0" class="tester-safe">未命中任何敏感词</span>
+          </div>
+          <div class="tester-preview">
+            <template v-for="(seg, idx) in testSegments" :key="idx">
+              <span v-if="seg.hit" class="hit-token" :class="'hit-level-' + seg.level">{{ seg.text }}</span>
+              <span v-else>{{ seg.text }}</span>
+            </template>
+          </div>
+        </template>
+        <div v-else class="tester-placeholder">输入文本后，命中的敏感词将在此高亮显示</div>
+      </div>
+    </el-card>
+
     <el-card class="table-card" shadow="never">
       <el-table v-loading="loading" :data="list" style="width: 100%">
         <el-table-column prop="id" label="ID" width="70" />
@@ -116,7 +155,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Lock } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -129,6 +168,50 @@ const page = ref(1)
 const pageSize = 20
 const keyword = ref('')
 const enabledFilter = ref<number | undefined>(undefined)
+
+// ---- 敏感词命中测试 ----
+const testText = ref('')
+const allWords = ref<any[]>([])
+const enabledWords = computed(() => allWords.value.filter((w) => w.enabled === 1 && w.word))
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+const testSegments = computed(() => {
+  const text = testText.value
+  if (!text) return [] as Array<{ text: string; hit: boolean; level?: number; word?: string }>
+  const words = enabledWords.value
+  if (!words.length) return [{ text, hit: false }]
+  const sorted = [...words].sort((a, b) => b.word.length - a.word.length)
+  const re = new RegExp(sorted.map((w) => escapeRegExp(w.word)).join('|'), 'gi')
+  const segs: Array<{ text: string; hit: boolean; level?: number; word?: string }> = []
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) segs.push({ text: text.slice(last, m.index), hit: false })
+    const hitWord = sorted.find((w) => w.word.toLowerCase() === m![0].toLowerCase())
+    segs.push({ text: m[0], hit: true, level: hitWord?.level, word: hitWord?.word || m[0] })
+    last = m.index + m[0].length
+    if (m[0].length === 0) re.lastIndex++
+  }
+  if (last < text.length) segs.push({ text: text.slice(last), hit: false })
+  return segs
+})
+
+const testHits = computed(() => testSegments.value.filter((s) => s.hit))
+
+const uniqueHits = computed(() => {
+  const seen = new Set<string>()
+  const out: Array<{ word: string; level: number }> = []
+  for (const h of testHits.value) {
+    const key = (h.word || '').toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ word: h.word || '', level: h.level ?? 1 })
+  }
+  return out
+})
 
 const dialogVisible = ref(false)
 const editing = ref(false)
@@ -149,6 +232,23 @@ function levelType(l: number) {
 }
 function actionText(a: string) {
   return a === 'block' ? '拦截' : '替换'
+}
+
+async function loadAllWords() {
+  // 接口单页上限 100，分页拉全量用于命中测试
+  try {
+    const words: any[] = []
+    let p = 1
+    for (;;) {
+      const res = await sensitiveApi.list({ page: p, page_size: 100 })
+      const data = res.data.data
+      const items = data?.items || []
+      words.push(...items)
+      if (items.length === 0 || words.length >= (data?.total || 0)) break
+      p++
+    }
+    allWords.value = words
+  } catch { /* ignore */ }
 }
 
 async function load() {
@@ -185,6 +285,7 @@ async function toggle(row: any, v: boolean) {
   try {
     await sensitiveApi.update(row.id, { enabled: v ? 1 : 0 })
     row.enabled = v ? 1 : 0
+    loadAllWords()
     ElMessage.success('已更新')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '操作失败')
@@ -210,6 +311,7 @@ async function submit() {
     ElMessage.success('保存成功')
     dialogVisible.value = false
     load()
+    loadAllWords()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '保存失败')
   } finally {
@@ -223,12 +325,16 @@ async function onDelete(row: any) {
     await sensitiveApi.remove(row.id)
     ElMessage.success('已删除')
     load()
+    loadAllWords()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '删除失败')
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadAllWords()
+})
 </script>
 
 <style scoped>
@@ -264,6 +370,63 @@ onMounted(load)
 .tip-alert {
   margin-bottom: 14px;
   border-radius: 8px;
+}
+
+/* 命中测试 */
+.tester-card {
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.tester-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 12px;
+}
+.tester-title .el-icon { color: var(--el-color-primary); }
+.tester-result {
+  margin-top: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-height: 64px;
+  background: var(--color-bg-page);
+}
+.tester-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 10px;
+}
+.tester-legend b { color: var(--el-color-danger); }
+.tester-safe { color: var(--el-color-success); }
+.tester-preview {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.hit-token {
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.hit-level-1 { background: rgba(144, 147, 153, .18); color: #909399; }
+.hit-level-2 { background: rgba(230, 162, 60, .18); color: #b88230; }
+.hit-level-3 { background: rgba(245, 108, 108, .18); color: #c45656; }
+html.dark .hit-level-1 { background: rgba(144, 147, 153, .28); color: #C8CBD0; }
+html.dark .hit-level-2 { color: #E6A23C; }
+html.dark .hit-level-3 { color: #F56C6C; }
+.tester-placeholder {
+  font-size: 13px;
+  color: var(--color-text-placeholder);
 }
 .table-card {
   border-radius: 10px;

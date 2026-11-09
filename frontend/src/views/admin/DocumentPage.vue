@@ -22,7 +22,7 @@
     <el-row :gutter="16" class="stats-row">
       <el-col :span="8">
         <div class="stat-card">
-          <div class="stat-icon" style="background: #e8f4fd; color: #409eff;">
+          <div class="stat-icon icon-blue">
             <el-icon :size="20"><Files /></el-icon>
           </div>
           <div class="stat-body">
@@ -33,7 +33,7 @@
       </el-col>
       <el-col :span="8">
         <div class="stat-card">
-          <div class="stat-icon" style="background: #e6f7e6; color: #67c23a;">
+          <div class="stat-icon icon-green">
             <el-icon :size="20"><Grid /></el-icon>
           </div>
           <div class="stat-body">
@@ -44,7 +44,7 @@
       </el-col>
       <el-col :span="8">
         <div class="stat-card">
-          <div class="stat-icon" style="background: #fef0e6; color: #e6a23c;">
+          <div class="stat-icon icon-orange">
             <el-icon :size="20"><Coin /></el-icon>
           </div>
           <div class="stat-body">
@@ -89,8 +89,15 @@
             <el-tag :type="reviewType(row.review_status)" size="small" effect="light">{{ reviewText(row.review_status) }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="有效期" width="150">
+          <template #default="{ row }">
+            <el-tag v-if="isExpired(row.expire_date)" type="danger" size="small" effect="plain">已失效</el-tag>
+            <span v-else-if="row.expire_date" class="expire-text">至 {{ row.expire_date }}</span>
+            <span v-else class="empty-hint">长期有效</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="上传时间" width="180" />
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="操作" width="240" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-btns">
               <el-upload
@@ -102,6 +109,10 @@
                   <el-button text size="small" :icon="Upload" class="action-btn">更新</el-button>
                 </el-tooltip>
               </el-upload>
+              <el-divider direction="vertical" />
+              <el-tooltip content="设置发布日期与失效日期" placement="top">
+                <el-button text size="small" :icon="Calendar" class="action-btn" @click="openExpireDialog(row)">有效期</el-button>
+              </el-tooltip>
               <el-divider direction="vertical" />
               <el-tooltip content="删除此文档" placement="top">
                 <el-button text type="danger" size="small" :icon="Delete" class="action-btn" @click="handleDelete(row)">删除</el-button>
@@ -170,6 +181,40 @@
       </template>
     </el-dialog>
 
+    <!-- 文档有效期对话框 -->
+    <el-dialog v-model="expireDialogVisible" title="文档有效期" width="480px" destroy-on-close>
+      <el-form label-width="90px">
+        <el-form-item label="文档">
+          <span class="expire-doc-title">{{ expireForm.title }}</span>
+        </el-form-item>
+        <el-form-item label="发布日期">
+          <el-date-picker
+            v-model="expireForm.publish_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择发布日期"
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="失效日期">
+          <el-date-picker
+            v-model="expireForm.expire_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="留空表示长期有效"
+            clearable
+            style="width: 100%"
+          />
+          <div class="expire-tip">到期后该文档自动退出问答检索（不再被引用回答）</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="expireDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="expireSaving" @click="saveExpire">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 快速新建分类对话框 -->
     <el-dialog v-model="createCatVisible" title="新建分类" width="420px" append-to-body>
       <el-form ref="createCatFormRef" :model="createCatForm" :rules="createCatRules" label-width="90px">
@@ -202,7 +247,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { Upload, UploadFilled, Plus, Document, Files, Grid, Coin, Search, Delete } from '@element-plus/icons-vue'
+import { Upload, UploadFilled, Plus, Document, Files, Grid, Coin, Search, Delete, Calendar } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import client from '@/api/client'
@@ -430,10 +475,54 @@ async function handleDelete(row: any) {
   } catch { /* 取消 */ }
 }
 
+// ==================== 文档有效期 ====================
+const expireDialogVisible = ref(false)
+const expireSaving = ref(false)
+const expireForm = reactive({
+  id: 0,
+  title: '',
+  publish_date: null as string | null,
+  expire_date: null as string | null,
+})
+
+/** 是否已过失效日期（expire_date 为 YYYY-MM-DD） */
+function isExpired(expireDate: string | null): boolean {
+  if (!expireDate) return false
+  return expireDate < new Date().toISOString().slice(0, 10)
+}
+
+function openExpireDialog(row: any) {
+  expireForm.id = row.id
+  expireForm.title = row.title
+  expireForm.publish_date = row.publish_date || null
+  expireForm.expire_date = row.expire_date || null
+  expireDialogVisible.value = true
+}
+
+async function saveExpire() {
+  expireSaving.value = true
+  try {
+    await client.put(`/documents/${expireForm.id}`, {
+      publish_date: expireForm.publish_date,
+      expire_date: expireForm.expire_date,
+    })
+    ElMessage.success('有效期已更新')
+    expireDialogVisible.value = false
+    loadData()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '保存失败')
+  } finally {
+    expireSaving.value = false
+  }
+}
+
 </script>
 
 <style scoped>
 .admin-page { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+.expire-text { font-size: 13px; color: var(--color-text-secondary); }
+.expire-doc-title { font-weight: 600; color: var(--color-text-primary); }
+.expire-tip { font-size: 12px; color: var(--color-text-placeholder); line-height: 1.6; margin-top: 2px; }
 
 .page-header {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;
@@ -453,6 +542,12 @@ async function handleDelete(row: any) {
   width: 42px; height: 42px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
+.icon-blue { background: #e8f4fd; color: #409eff; }
+.icon-green { background: #e6f7e6; color: #67c23a; }
+.icon-orange { background: #fef0e6; color: #e6a23c; }
+html.dark .icon-blue { background: rgba(64, 158, 255, 0.16); }
+html.dark .icon-green { background: rgba(103, 194, 58, 0.16); }
+html.dark .icon-orange { background: rgba(230, 162, 60, 0.16); }
 .stat-body { flex: 1; }
 .stat-value { font-size: 22px; font-weight: 700; color: var(--color-text-primary); line-height: 1.2; }
 .stat-label { font-size: 13px; color: var(--color-text-placeholder); margin-top: 2px; }

@@ -28,7 +28,7 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 
 @router.post("/register", response_model=APIResponse, summary="用户注册")
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
-    """新用户注册（默认角色：普通员工）"""
+    """新用户注册（默认角色：学生）"""
     user = AuthService.register(db, request)
     return APIResponse(
         code=0,

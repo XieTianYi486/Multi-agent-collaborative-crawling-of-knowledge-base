@@ -24,11 +24,10 @@ from app.services.audit_service import add_audit_log, get_client_info
 class AuthService:
     """认证业务逻辑"""
 
-    # 登录身份分组 → 允许的角色编码
-    # student=学生、teacher=老师（兼容旧“普通员工”）、admin=各类管理员
+    # 登录身份分组 → 允许的角色编码（教学场景：学生 / 老师 / 管理员）
     IDENTITY_ROLES = {
         "student": ["student"],
-        "teacher": ["teacher", "employee"],
+        "teacher": ["teacher"],
         "admin": ["super_admin", "knowledge_admin", "dept_admin"],
     }
 
@@ -173,8 +172,8 @@ class AuthService:
         # 生成 JWT（附带角色编码，避免后续再查库）
         extra_claims = {
             "username": user.username,
-            "role": role.code if role else "employee",
-            "role_name": role.name if role else "普通员工",
+            "role": role.code if role else "student",
+            "role_name": role.name if role else "学生",
         }
         token = create_access_token(
             subject=str(user.id),
@@ -215,7 +214,7 @@ class AuthService:
         获取用户完整信息（含角色名）
         user.role 已通过 joinedload 预加载到内存，无需数据库查询
         """
-        role_name = user.role.name if user.role else "普通员工"
+        role_name = user.role.name if user.role else "学生"
         return {
             "id": user.id,
             "username": user.username,

@@ -12,6 +12,7 @@ import logging
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_api_client
+from app.core.rate_limit import rate_limit_open_api
 from app.models.api_client import ApiClient
 from app.schemas.common import APIResponse
 from app.schemas.openapi import OpenAskRequest, OpenSearchRequest
@@ -63,7 +64,7 @@ def open_search(
 @router.post("/ask", response_model=APIResponse, summary="知识库问答")
 def open_ask(
     request: OpenAskRequest,
-    client: ApiClient = Depends(get_api_client),
+    client: ApiClient = Depends(rate_limit_open_api),
 ):
     """
     知识库问答接口（完整 RAG：检索 → 重排 → LLM 生成）

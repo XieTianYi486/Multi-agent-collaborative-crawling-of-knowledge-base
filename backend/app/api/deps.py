@@ -136,6 +136,10 @@ def require_role(role_codes: list[str]):
 require_super_admin = require_role(["super_admin"])
 require_knowledge_admin = require_role(["super_admin", "knowledge_admin"])
 require_dept_admin = require_role(["super_admin", "knowledge_admin", "dept_admin"])
+# 文档共建：教师可上传投稿（一律进入待审核），管理员仍可直接上传
+require_document_contributor = require_role(
+    ["super_admin", "knowledge_admin", "teacher"]
+)
 
 
 # ==================== 开放 API 鉴权 ====================

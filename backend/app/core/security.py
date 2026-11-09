@@ -37,6 +37,27 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+# ==================== 文档密级权限 ====================
+
+def get_max_security_level(role_code: Optional[str]) -> int:
+    """
+    根据角色码返回可访问的文档密级上限
+
+    密级：1=公开, 2=内部, 3=机密, 4=绝密
+    角色：super_admin/knowledge_admin=4, dept_admin=3, 其余=1
+    """
+    if role_code in ("super_admin", "knowledge_admin"):
+        return 4
+    if role_code == "dept_admin":
+        return 3
+    return 1  # employee / teacher / student 及未知角色默认仅看公开
+
+
+def is_knowledge_admin(role_code: Optional[str]) -> bool:
+    """是否为知识库管理员或超级管理员（可查看全部文档）"""
+    return role_code in ("super_admin", "knowledge_admin")
+
+
 # ==================== 开放 API Key 工具函数 ====================
 
 def generate_api_key() -> str:

@@ -69,6 +69,8 @@ class DocumentResponse(BaseModel):
     tags: Optional[list] = None
     chunk_count: int
     created_by: Optional[int] = None
+    source_url: Optional[str] = Field(default=None, description="来源URL（爬虫入库文档，可为空）")
+    match_snippet: Optional[str] = Field(default=None, description="检索时正文命中片段（仅列表返回）")
     created_at: datetime
     updated_at: datetime
 

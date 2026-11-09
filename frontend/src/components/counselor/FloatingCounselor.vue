@@ -6,17 +6,16 @@
         v-if="!open"
         ref="fabEl"
         class="cp-fab"
-        title="AI 导员（可拖动）"
+        title="AI 助手（可拖动）"
         :style="fabStyle"
         @pointerdown="onFabDown"
         @dragstart.prevent
         @click="onFabClick"
       >
-        <span class="cp-fab-ring"></span>
         <span class="cp-fab-core">
-          <img class="cp-fab-img" :src="counselorAvatar" alt="AI 导员" draggable="false" />
+          <img class="cp-fab-img" :src="counselorAvatar" alt="AI 助手" draggable="false" />
         </span>
-        <span class="cp-fab-tip">AI 导员在线</span>
+        <span class="cp-fab-tip">AI 助手在线</span>
       </button>
     </transition>
 
@@ -25,11 +24,11 @@
       <section v-if="open" ref="panelEl" class="cp-panel" :style="panelStyle">
         <header class="cp-head" title="按住此处可拖动窗口" @pointerdown="onHeadDown" @dragstart.prevent>
           <div class="cp-avatar">
-            <Live2DAvatar :talking="streaming || speaking" :active="open" :width="72" :height="88" :fallback="counselorAvatar" />
+            <img class="cp-avatar-img" :src="counselorAvatar" alt="AI 助手" draggable="false" />
           </div>
           <div class="cp-title">
-            <div class="cp-name">AI 导员</div>
-            <div class="cp-sub">温柔耐心 · 随时陪你聊聊</div>
+            <div class="cp-name">AI 助手</div>
+            <div class="cp-sub">智能问答 · 随时为你答疑</div>
           </div>
           <div class="cp-actions">
             <div class="cp-voice-wrap">
@@ -38,10 +37,10 @@
                 <span v-if="!voiceEnabled" class="cp-mic-slash"></span>
               </button>
               <!-- 加载指示器：正在生成回复且尚未开始说话时显示 -->
-              <div v-if="streaming && !speaking" class="cp-loading-spinner" title="导员正在思考中…">
+              <div v-if="streaming && !speaking" class="cp-loading-spinner" title="AI 助手正在思考中…">
                 <svg viewBox="0 0 24 24" width="18" height="18">
-                  <circle cx="12" cy="12" r="9" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="3"/>
-                  <circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="rgba(79,70,229,0.25)" stroke-width="3"/>
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="#4F46E5" stroke-width="3" stroke-linecap="round"
                     stroke-dasharray="14 42" transform="rotate(0 12 12)">
                     <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/>
                   </circle>
@@ -85,93 +84,6 @@
           </div>
         </header>
 
-        <!-- 学分绩点计算器：确定性换算，不经过模型生成，结果可复现 -->
-        <transition name="cp-fade">
-          <div v-if="gpaOpen" class="cp-gpa">
-            <div class="cp-gpa-head">
-              <button class="cp-gpa-back" title="返回对话" @click="gpaOpen = false">
-                <el-icon><ArrowLeft /></el-icon>
-              </button>
-              <span class="cp-gpa-title">学分绩点计算器</span>
-            </div>
-
-            <div class="cp-gpa-body">
-              <p class="cp-gpa-tip">
-                按《学分制教学管理制度》换算：百分制、五级制自动折算计点，课程学分绩点 = 绩点 × 学分。
-              </p>
-
-              <div v-for="(r, i) in gpaRows" :key="r.id" class="cp-gpa-row">
-                <div class="cp-gpa-row-top">
-                  <input v-model="r.name" class="cp-gpa-name" type="text" :placeholder="`课程 ${i + 1}`" />
-                  <button class="cp-gpa-del" title="删除该课程" @click="removeGpaRow(r.id)">
-                    <el-icon><Delete /></el-icon>
-                  </button>
-                </div>
-                <div class="cp-gpa-row-bottom">
-                  <input
-                    v-model="r.credit"
-                    class="cp-gpa-num"
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    placeholder="学分"
-                  />
-                  <select v-model="r.type" class="cp-gpa-sel">
-                    <option value="percent">百分制</option>
-                    <option value="grade">五级制</option>
-                    <option value="pass">通过</option>
-                  </select>
-                  <select v-if="r.type === 'grade'" v-model="r.score" class="cp-gpa-sel score">
-                    <option value="A">A 优秀</option>
-                    <option value="B">B 良好</option>
-                    <option value="C">C 中等</option>
-                    <option value="D">D 及格</option>
-                    <option value="E">E 不及格</option>
-                  </select>
-                  <input
-                    v-else-if="r.type === 'percent'"
-                    v-model="r.score"
-                    class="cp-gpa-num score"
-                    type="number"
-                    min="0"
-                    max="100"
-                    placeholder="成绩"
-                  />
-                  <span v-else class="cp-gpa-pass">不计入</span>
-                  <span class="cp-gpa-point">{{ pointLabel(r) }}</span>
-                  <label class="cp-gpa-inc" title="劳动教育、通识选修、思政实践、毕业实习与毕业论文不计入">
-                    <input v-model="r.included" type="checkbox" />计入
-                  </label>
-                </div>
-              </div>
-
-              <button class="cp-gpa-add" @click="addGpaRow">+ 添加课程</button>
-            </div>
-
-            <div class="cp-gpa-foot">
-              <div class="cp-gpa-stat">
-                <span>学分绩点之和</span>
-                <strong>{{ fmt(gpaResult.sumPoint) }}</strong>
-              </div>
-              <div class="cp-gpa-stat">
-                <span>学分之和</span>
-                <strong>{{ fmt(gpaResult.sumCredit) }}</strong>
-              </div>
-              <div class="cp-gpa-final">
-                <span class="cp-gpa-final-label">平均学分绩点</span>
-                <strong class="cp-gpa-final-value" :class="{ warn: gpaResult.hasData && gpaResult.gpa < 2 }">
-                  {{ gpaResult.hasData ? gpaResult.gpa.toFixed(2) : '—' }}
-                </strong>
-              </div>
-              <p v-if="gpaResult.hasData" class="cp-gpa-warn" :class="{ warn: gpaResult.gpa < 2 }">
-                {{ gpaResult.gpa < 2
-                  ? '低于 2.0 学位线：1-6 学期处于该水平会触发学位预警，且不授予学士学位'
-                  : '已达到 2.0 学位线' }}
-              </p>
-            </div>
-          </div>
-        </transition>
-
         <!-- 历史会话 -->
         <transition name="cp-fade">
           <div v-if="showHistory" class="cp-history">
@@ -194,10 +106,12 @@
         <!-- 消息区 -->
         <div ref="listEl" class="cp-body">
           <div v-if="!messages.length && !streaming" class="cp-welcome">
-            <div class="cp-welcome-emoji">🌿</div>
+            <div class="cp-welcome-bot">
+              <img class="cp-welcome-bot-img" :src="counselorAvatar" alt="AI 助手" draggable="false" />
+            </div>
             <p class="cp-welcome-text">
-              你好呀，我是你的导员～<br />
-              学习上的困惑、生活里的烦恼，或是想了解学校的相关规定，都可以慢慢跟我说。
+              你好呀，我是你的 AI 助手～<br />
+              嵌入式开发学习中的问题（ESP32 / ESP-IDF / 树莓派 / 电子电路），或是想查找教学资料，都可以问我。
             </p>
             <div class="cp-quick">
               <button v-for="q in quickPrompts" :key="q" class="cp-quick-btn" @click="askQuick(q)">
@@ -209,22 +123,18 @@
                 <el-icon :class="{ spinning: refreshing }"><Refresh /></el-icon>
                 <span>换一批</span>
               </button>
-              <button class="cp-quick-refresh" title="按学校规则计算学分绩点" @click="gpaOpen = true">
-                <el-icon><DataAnalysis /></el-icon>
-                <span>绩点计算器</span>
-              </button>
             </div>
           </div>
 
           <div v-for="m in messages" :key="m.id" class="cp-row" :class="m.role">
             <div class="cp-bubble">
               <span v-if="m.role === 'assistant' && m.mode" class="cp-mode-tag" :class="m.mode">
-                {{ m.mode === 'knowledge' ? '依据校规' : '陪伴模式' }}
+                {{ m.mode === 'knowledge' ? '知识库依据' : '智能回答' }}
               </span>
-              <!-- 导员回答是 Markdown（含表格/加粗/分点），需渲染后展示，否则原文符号会直接暴露给用户 -->
+              <!-- AI 助手回答是 Markdown（含表格/加粗/分点），需渲染后展示，否则原文符号会直接暴露给用户 -->
               <div class="cp-text" v-html="renderMarkdown(m.content)"></div>
               <div v-if="m.sources && m.sources.length" class="cp-sources">
-                <div class="cp-sources-title">参考条款（点击展开原文）</div>
+                <div class="cp-sources-title">参考来源（点击展开原文）</div>
                 <div
                   v-for="(s, i) in m.sources"
                   :key="i"
@@ -233,14 +143,14 @@
                 >
                   <button class="cp-source-head" @click="toggleSource(m.id, i)">
                     <span class="cp-source-dot"></span>
-                    <span class="cp-source-label">《{{ s.source_title }}》{{ s.article_no }}</span>
+                    <span class="cp-source-label">{{ s.document_name }}<template v-if="s.chapter"> · {{ s.chapter }}</template></span>
                     <span class="cp-source-arrow">▾</span>
                   </button>
                   <div v-if="isSourceOpen(m.id, i)" class="cp-source-text">
                     {{ s.snippet || '暂无原文片段' }}
                     <a
                       v-if="isHttpUrl(s.source_url)"
-                      :href="s.source_url"
+                      :href="s.source_url ?? undefined"
                       target="_blank"
                       rel="noopener noreferrer"
                       class="cp-source-link"
@@ -257,7 +167,7 @@
               <div v-if="streamContent && minLoadingDone" class="cp-text" v-html="renderMarkdown(streamContent)"></div>
               <div v-else class="cp-loading">
                 <div class="cp-typing"><i></i><i></i><i></i></div>
-                <span class="cp-loading-text">导员正在思考中…</span>
+                <span class="cp-loading-text">AI 助手正在思考中…</span>
               </div>
             </div>
           </div>
@@ -271,7 +181,7 @@
             </div>
           </div>
 
-          <div v-if="notice" class="cp-notice">你的消息中包含不合适的内容，导员已为你调整措辞。</div>
+          <div v-if="notice" class="cp-notice">你的消息中包含不合适的内容，AI 助手已为你调整措辞。</div>
           <div v-if="errorMsg" class="cp-notice error">{{ errorMsg }}</div>
         </div>
 
@@ -282,7 +192,7 @@
             v-model="input"
             class="cp-input"
             rows="1"
-            placeholder="和导员说说你的心事或疑问…"
+            placeholder="和 AI 助手聊聊你的问题…"
             @input="autoResizeInput"
             @keydown.enter.exact="onEnter"
           />
@@ -300,11 +210,10 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { Close, Plus, Clock, Delete, Promotion, Refresh, ArrowLeft, DataAnalysis, Microphone, CaretBottom } from '@element-plus/icons-vue'
+import { Close, Plus, Clock, Delete, Promotion, Refresh, Microphone, CaretBottom } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { counselorApi, counselorStream } from '@/api/counselor'
 import type { CounselorSource, CounselorSession } from '@/api/counselor'
-import Live2DAvatar from './Live2DAvatar.vue'
 
 // html: false —— 禁止原始 HTML 透传，避免模型输出带标签时触发 XSS
 const md = new MarkdownIt({ breaks: true, linkify: true, html: false })
@@ -331,105 +240,8 @@ function isHttpUrl(url?: string | null) {
   return !!url && /^https?:\/\//i.test(url.trim())
 }
 
-/* ================= 学分绩点计算器 ================= */
-
-type GpaScoreType = 'percent' | 'grade' | 'pass'
-
-interface GpaRow {
-  id: number
-  name: string
-  credit: string
-  type: GpaScoreType
-  score: string
-  included: boolean
-}
-
-const gpaOpen = ref(false)
-let gpaSeq = 0
-
-function makeGpaRow(): GpaRow {
-  return { id: ++gpaSeq, name: '', credit: '', type: 'percent', score: '', included: true }
-}
-
-const gpaRows = ref<GpaRow[]>([makeGpaRow(), makeGpaRow(), makeGpaRow()])
-
-function addGpaRow() {
-  gpaRows.value.push(makeGpaRow())
-}
-
-function removeGpaRow(id: number) {
-  gpaRows.value = gpaRows.value.filter((r) => r.id !== id)
-}
-
-/** 五级制折算（《学分制教学管理制度》第六条） */
-const GRADE_POINTS: Record<string, number> = { A: 4.0, B: 3.0, C: 2.0, D: 1.0, E: 0 }
-
-/** 百分制分段折算（第五条）：从高到低命中第一个区间 */
-const PERCENT_STEPS: Array<[number, number]> = [
-  [85, 3.5],
-  [80, 3.0],
-  [75, 2.5],
-  [70, 2.0],
-  [65, 1.5],
-  [60, 1.0],
-]
-
-function pointOf(row: GpaRow): number | null {
-  if (row.type === 'pass') return null
-  if (row.type === 'grade') return GRADE_POINTS[row.score] ?? null
-  const score = Number(row.score)
-  if (row.score === '' || !Number.isFinite(score)) return null
-  if (score >= 90) return 4.0
-  for (const [min, point] of PERCENT_STEPS) {
-    if (score >= min) return point
-  }
-  return 0
-}
-
-function pointLabel(row: GpaRow) {
-  const point = pointOf(row)
-  return point === null ? '—' : `绩点 ${point.toFixed(1)}`
-}
-
-/**
- * 平均学分绩点 = 学分绩点之和 ÷ 学分之和（第七条）。
- * "通过"性质课程与手动取消"计入"的课程（劳动教育/通识选修/思政实践/毕业实习与论文，第八条）不参与计算。
- */
-const gpaResult = computed(() => {
-  let sumPoint = 0
-  let sumCredit = 0
-  for (const row of gpaRows.value) {
-    if (!row.included) continue
-    const credit = Number(row.credit)
-    const point = pointOf(row)
-    if (row.credit === '' || !Number.isFinite(credit) || credit <= 0 || point === null) continue
-    sumPoint += point * credit
-    sumCredit += credit
-  }
-  return {
-    sumPoint,
-    sumCredit,
-    gpa: sumCredit > 0 ? sumPoint / sumCredit : 0,
-    hasData: sumCredit > 0,
-  }
-})
-
-/** 去掉浮点尾差，整数不带小数点 */
-function fmt(n: number) {
-  return String(Math.round(n * 100) / 100)
-}
-
-/**
- * 仅在用户给出具体成绩数据时判定为"要我算"。
- * 像"平均学分绩点怎么算""绩点低于多少拿不到学位"这类规则询问，仍走知识库问答。
- */
-function isGpaCalcRequest(question: string) {
-  if (!/(学分绩点|平均绩点|绩点|GPA)/i.test(question)) return false
-  return /\d+\s*(分|学分)/.test(question) || /[ABCDE]\s*(优秀|良好|中等|及格|不及格)/.test(question)
-}
-
-// 导员形象（静态资源，置于 public 目录，避免为图片导入引入额外类型声明）
-const counselorAvatar = '/counselor-avatar.jpeg'
+// AI 助手形象（静态资源，置于 public 目录，避免为图片导入引入额外类型声明）
+const counselorAvatar = '/ai-assistant.jpg?v=2'
 
 interface LocalMessage {
   id: number
@@ -496,7 +308,7 @@ function selectVoice(shortName: string) {
   voiceMenuOpen.value = false
   // 切换音色后试听一句（无论语音是否开启，都播放试听让用户确认）
   stopSpeak()
-  speak('你好呀，我是你的导员，这是我的新声音。')
+  speak('你好呀，我是你的AI 助手，这是我的新声音。')
 }
 
 // 按标点把长文本切成短句，每段不超过 80 字，降低单段合成延迟
@@ -622,7 +434,7 @@ function toggleVoice() {
     if (lastAssistant?.content) {
       speak(lastAssistant.content)
     } else {
-      speak('你好呀，我是你的导员，有什么可以帮你的吗？')
+      speak('你好呀，我是你的AI 助手，有什么可以帮你的吗？')
     }
   }
 }
@@ -828,23 +640,16 @@ let seq = 0
 
 /** 预设问题池：每次随机抽 4 条展示，点"换一批"重新抽取，避免只看到固定几条 */
 const QUICK_POOL = [
-  '旷课多少学时会被处分？',
-  '论文抄袭会怎么处理？',
-  '考试作弊会受到什么处分？',
-  '迟到早退怎么算旷课？',
-  '取消考试资格是什么情况？',
-  '补考和重修有什么区别？',
-  '挂科太多会被降级吗？',
-  '毕业需要满足哪些条件？',
-  '平均学分绩点怎么算？',
-  '绩点低于多少拿不到学位证？',
-  '3学分80分、2学分优秀，绩点怎么算？',
-  '创新学分要修满多少才能毕业？',
-  '国家奖学金一年多少钱？',
-  '国家助学金怎么申请？',
-  '什么情况下不授予学士学位？',
-  '转学需要满足什么条件？',
-  '平均学分绩点会算哪些课程？',
+  'ESP32 如何配置 GPIO 中断？',
+  'ESP-IDF 工程编译报错怎么排查？',
+  'ESP32 烧录失败有哪些常见原因？',
+  '树莓派如何连接 I2C 传感器？',
+  'FreeRTOS 任务优先级怎么设置？',
+  'ESP32 的 UART 有几个，如何配置？',
+  'MQTT 连接阿里云物联网平台怎么做？',
+  '电子电路里上拉电阻的作用是什么？',
+  'ESP32 低功耗模式怎么使用？',
+  'APA102 灯带的 SPI 时序是怎样的？',
 ]
 
 const QUICK_COUNT = 4
@@ -973,7 +778,6 @@ function newChat() {
   notice.value = ''
   errorMsg.value = ''
   showHistory.value = false
-  gpaOpen.value = false
 }
 
 function askQuick(q: string) {
@@ -999,21 +803,6 @@ function send() {
   errorMsg.value = ''
   stopSpeak()
   messages.value.push({ id: ++seq, role: 'user', content: question })
-
-  // 算绩点是确定性计算，交给模型心算容易在分段换算和排除规则上出错，
-  // 因此直接打开计算器，不发起 LLM 请求（也就不必等十几秒）
-  if (isGpaCalcRequest(question)) {
-    gpaOpen.value = true
-    messages.value.push({
-      id: ++seq,
-      role: 'assistant',
-      content: '这类换算交给计算器最稳妥～把每门课的学分和成绩填进去，会按学校规则自动折算，并直接算出平均学分绩点。\n\n注意：劳动教育、通识选修、思政实践、毕业实习与毕业论文，以及“通过”性质的课程不计入。',
-      mode: null,
-      sources: null,
-    })
-    scrollToBottom()
-    return
-  }
 
   streaming.value = true
   streamContent.value = ''
@@ -1056,7 +845,7 @@ function send() {
     onError: (err) => {
       streaming.value = false
       streamContent.value = ''
-      errorMsg.value = `导员暂时没能回应：${err}`
+      errorMsg.value = `AI 助手暂时没能回应：${err}`
       scrollToBottom()
     },
   })
@@ -1077,6 +866,9 @@ function stop() {
   streamContent.value = ''
   streaming.value = false
 }
+
+// 供侧边栏「AI 助手」导航项唤起面板
+defineExpose({ openPanel })
 </script>
 
 <style scoped>
@@ -1100,27 +892,25 @@ function stop() {
   width: 58px;
   height: 58px;
   box-sizing: border-box;
-  padding: 2.5px;
+  padding: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: linear-gradient(135deg, var(--color-primary, #4f46e5), #7c8cf8);
-  box-shadow: 0 10px 26px rgba(79, 70, 229, 0.42);
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
   transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
-/* 导员头像：圆形裁切并略微放大，让面部更清晰 */
+/* AI 助手头像：保留原图白底，避免抠图边缘发脏 */
 .cp-fab-img {
   width: 100%;
   height: 100%;
   display: block;
   border-radius: 50%;
   object-fit: cover;
-  object-position: 50% 36%;
-  transform-origin: 50% 36%;
-  transform: scale(1.18);
   /* 关键：禁用图片默认的原生拖拽，否则按住头像会触发 HTML5 dragstart，
      拖动期间 pointermove 被浏览器吞掉，导致图标只在松手后才跳位 */
   -webkit-user-drag: none;
@@ -1128,22 +918,8 @@ function stop() {
   pointer-events: none;
 }
 .cp-fab:hover .cp-fab-core {
-  transform: translateY(-2px) scale(1.05);
-  box-shadow: 0 14px 32px rgba(79, 70, 229, 0.55);
-}
-
-/* 呼吸光环 */
-.cp-fab-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: rgba(79, 70, 229, 0.35);
-  animation: cp-pulse 2.4s ease-out infinite;
-}
-@keyframes cp-pulse {
-  0% { transform: scale(1); opacity: 0.7; }
-  70% { transform: scale(1.6); opacity: 0; }
-  100% { transform: scale(1.6); opacity: 0; }
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.24);
 }
 
 /* 悬停提示 */
@@ -1175,23 +951,24 @@ function stop() {
   max-height: calc(100vh - 140px);
   display: flex;
   flex-direction: column;
-  border-radius: 18px;
+  border-radius: 16px;
   overflow: hidden;
   z-index: 2001;
   background: var(--color-bg-card, #fff);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  box-shadow: 0 24px 60px rgba(24, 26, 54, 0.22);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
   backdrop-filter: blur(14px);
 }
 
-/* 头部（同时是拖动把手） */
+/* 头部（同时是拖动把手）：与项目卡片一致，浅色底 + 细边框 */
 .cp-head {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 14px 14px 14px 16px;
-  background: linear-gradient(135deg, var(--color-primary, #4f46e5), #7c8cf8);
-  color: #fff;
+  background: var(--color-bg-card, #fff);
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  color: var(--color-text-primary, #0f172a);
   flex-shrink: 0;
   cursor: grab;
   touch-action: none;
@@ -1204,16 +981,17 @@ function stop() {
 :global(body.cp-dragging .cp-fab),
 :global(body.cp-dragging .cp-panel) { transition: none !important; }
 .cp-avatar {
-  width: 72px;
-  height: 88px;
+  width: 46px;
+  height: 46px;
   box-sizing: border-box;
-  border-radius: 12px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.22);
-  border: 1.5px solid rgba(255, 255, 255, 0.65);
+  padding: 0;
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   flex-shrink: 0;
 }
 
@@ -1223,16 +1001,13 @@ function stop() {
   display: block;
   border-radius: 50%;
   object-fit: cover;
-  object-position: 50% 36%;
-  transform-origin: 50% 36%;
-  transform: scale(1.18);
-  /* 同上：禁用原生图片拖拽，保证面板头部拖动手感 */
+  /* 禁用原生图片拖拽，保证面板头部拖动手感 */
   -webkit-user-drag: none;
   user-select: none;
 }
 .cp-title { flex: 1; min-width: 0; }
-.cp-name { font-size: 15px; font-weight: 700; line-height: 1.3; }
-.cp-sub { font-size: 11.5px; opacity: 0.85; margin-top: 2px; }
+.cp-name { font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--color-text-primary, #0f172a); }
+.cp-sub { font-size: 11.5px; color: var(--color-text-secondary, #64748b); margin-top: 3px; }
 
 .cp-actions { display: flex; gap: 2px; }
 .cp-icon-btn {
@@ -1241,17 +1016,20 @@ function stop() {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #fff;
+  color: var(--color-text-secondary, #64748b);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.cp-icon-btn:hover { background: rgba(255, 255, 255, 0.2); }
+.cp-icon-btn:hover {
+  background: var(--color-bg-hover, #f1f5f9);
+  color: var(--color-primary, #4f46e5);
+}
 .cp-voice-icon.off { opacity: 0.5; }
 /* 闭麦状态：麦克风按钮变灰 + 红色禁止斜杠 */
-.cp-mic-btn.muted { background: rgba(255, 255, 255, 0.08); }
+.cp-mic-btn.muted { background: var(--color-bg-hover, #f1f5f9); }
 .cp-mic-btn { position: relative; }
 .cp-mic-slash {
   position: absolute;
@@ -1284,15 +1062,16 @@ function stop() {
   min-width: 200px;
   max-height: 260px;
   overflow-y: auto;
-  background: #fff;
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
   padding: 6px;
   z-index: 1000;
 }
 .cp-voice-menu-title {
   font-size: 12px;
-  color: #8a8f99;
+  color: var(--color-text-secondary, #64748b);
   padding: 6px 10px 4px;
 }
 .cp-voice-item {
@@ -1305,26 +1084,26 @@ function stop() {
   cursor: pointer;
   transition: background 0.15s ease;
 }
-.cp-voice-item:hover { background: #f3f4f6; }
+.cp-voice-item:hover { background: var(--color-bg-hover, #f1f5f9); }
 .cp-voice-item.active {
-  background: #eef2ff;
+  background: var(--color-primary-light, #e0e7ff);
 }
 .cp-voice-item.active .cp-voice-name {
-  color: #6366f1;
+  color: var(--color-primary, #4f46e5);
   font-weight: 600;
 }
 .cp-voice-name {
   font-size: 13px;
-  color: #333;
+  color: var(--color-text-body, #334155);
 }
 .cp-voice-lang {
   font-size: 11px;
-  color: #a0a3ab;
+  color: var(--color-text-secondary, #64748b);
 }
 .cp-voice-empty {
   padding: 12px 10px;
   font-size: 13px;
-  color: #a0a3ab;
+  color: var(--color-text-secondary, #64748b);
   text-align: center;
 }
 
@@ -1334,7 +1113,7 @@ function stop() {
   overflow-y: auto;
   padding: 8px;
   border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  background: var(--color-bg-page, #f6f7fb);
+  background: var(--color-bg-card, #fff);
   flex-shrink: 0;
 }
 .cp-history-empty {
@@ -1352,8 +1131,11 @@ function stop() {
   cursor: pointer;
   transition: background 0.15s ease;
 }
-.cp-history-item:hover { background: var(--color-primary-light, rgba(79, 70, 229, 0.08)); }
-.cp-history-item.active { background: var(--color-primary-light, rgba(79, 70, 229, 0.12)); }
+.cp-history-item:hover { background: var(--color-bg-hover, #f1f5f9); }
+.cp-history-item.active {
+  background: var(--color-primary-light, #e0e7ff);
+}
+.cp-history-item.active .cp-history-title { color: var(--color-primary, #4f46e5); }
 .cp-history-title {
   flex: 1;
   min-width: 0;
@@ -1388,7 +1170,7 @@ function stop() {
 }
 .cp-body::-webkit-scrollbar { width: 6px; }
 .cp-body::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.14);
+  background: var(--color-border, rgba(0, 0, 0, 0.14));
   border-radius: 3px;
 }
 
@@ -1398,12 +1180,36 @@ function stop() {
   text-align: center;
   padding: 6px 4px;
 }
-.cp-welcome-emoji { font-size: 30px; }
+/* 欢迎态：与 ChatPage 首页的机器人展示保持一致 */
+.cp-welcome-bot {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-sizing: border-box;
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+}
+.cp-welcome-bot-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+  object-fit: cover;
+  -webkit-user-drag: none;
+  user-select: none;
+}
 .cp-welcome-text {
-  margin: 10px 0 16px;
+  margin: 12px 0 16px;
   font-size: 13px;
   line-height: 1.8;
-  color: var(--color-text-secondary, #6b7290);
+  color: var(--color-text-secondary, #64748b);
 }
 .cp-quick {
   display: flex;
@@ -1414,7 +1220,7 @@ function stop() {
 .cp-quick-btn {
   border: 1px solid var(--color-border, rgba(79, 70, 229, 0.2));
   background: var(--color-bg-card, #fff);
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-text-body, #334155);
   font-size: 12.5px;
   padding: 7px 12px;
   border-radius: 999px;
@@ -1422,6 +1228,7 @@ function stop() {
   transition: all 0.18s ease;
 }
 .cp-quick-btn:hover {
+  color: var(--color-primary, #4f46e5);
   background: var(--color-primary-light, rgba(79, 70, 229, 0.1));
   border-color: var(--color-primary, #4f46e5);
   transform: translateY(-1px);
@@ -1453,7 +1260,7 @@ function stop() {
   transform: rotate(360deg);
 }
 
-/* 首屏工具行：换一批 + 绩点计算器 */
+/* 首屏工具行：换一批 */
 .cp-welcome-tools {
   display: flex;
   justify-content: center;
@@ -1464,218 +1271,6 @@ function stop() {
   margin-top: 10px;
 }
 
-/* ================= 学分绩点计算器 ================= */
-.cp-gpa {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg-page, #f6f7fb);
-}
-.cp-gpa-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  background: var(--color-bg-card, #fff);
-  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  flex-shrink: 0;
-}
-.cp-gpa-back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 8px;
-  background: var(--color-bg-hover, rgba(79, 70, 229, 0.08));
-  color: var(--color-text-secondary, #6b7290);
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-.cp-gpa-back:hover {
-  color: var(--color-primary, #4f46e5);
-}
-.cp-gpa-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary, #1f2333);
-}
-.cp-gpa-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.cp-gpa-body::-webkit-scrollbar { width: 6px; }
-.cp-gpa-body::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.14);
-  border-radius: 3px;
-}
-.cp-gpa-tip {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.65;
-  color: var(--color-text-secondary, #6b7290);
-}
-.cp-gpa-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 10px;
-  background: var(--color-bg-card, #fff);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-}
-.cp-gpa-row-top {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.cp-gpa-row-bottom {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.cp-gpa-name,
-.cp-gpa-num,
-.cp-gpa-sel {
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
-  border-radius: 6px;
-  background: var(--color-bg-page, #f6f7fb);
-  color: var(--color-text-primary, #1f2333);
-  font-size: 12px;
-  outline: none;
-  transition: border-color 0.18s ease;
-}
-.cp-gpa-name:focus,
-.cp-gpa-num:focus,
-.cp-gpa-sel:focus {
-  border-color: var(--color-primary, #4f46e5);
-}
-.cp-gpa-name {
-  flex: 1;
-  min-width: 0;
-}
-.cp-gpa-num { width: 62px; }
-.cp-gpa-num.score,
-.cp-gpa-sel.score { width: 76px; }
-.cp-gpa-sel { width: 78px; }
-/* 数字输入框去掉原生上下箭头，避免窄行里挤占空间 */
-.cp-gpa-num::-webkit-outer-spin-button,
-.cp-gpa-num::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-.cp-gpa-num { -moz-appearance: textfield; }
-.cp-gpa-del {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-secondary, #6b7290);
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-.cp-gpa-del:hover {
-  color: #e0533d;
-  background: rgba(224, 83, 61, 0.08);
-}
-.cp-gpa-point {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--color-primary, #4f46e5);
-  white-space: nowrap;
-}
-.cp-gpa-inc {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--color-text-secondary, #6b7290);
-  white-space: nowrap;
-  cursor: pointer;
-}
-.cp-gpa-pass {
-  width: 76px;
-  text-align: center;
-  font-size: 11px;
-  color: var(--color-text-secondary, #6b7290);
-}
-.cp-gpa-add {
-  height: 34px;
-  border: 1px dashed var(--color-border, rgba(0, 0, 0, 0.16));
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-text-secondary, #6b7290);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-.cp-gpa-add:hover {
-  border-color: var(--color-primary, #4f46e5);
-  color: var(--color-primary, #4f46e5);
-}
-.cp-gpa-foot {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 12px;
-  padding: 12px 14px 14px;
-  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  background: var(--color-bg-card, #fff);
-  flex-shrink: 0;
-}
-.cp-gpa-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 11px;
-  color: var(--color-text-secondary, #6b7290);
-}
-.cp-gpa-stat strong {
-  font-size: 14px;
-  color: var(--color-text-primary, #1f2333);
-  font-variant-numeric: tabular-nums;
-}
-.cp-gpa-final {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding-top: 8px;
-  border-top: 1px dashed var(--color-border, rgba(0, 0, 0, 0.12));
-}
-.cp-gpa-final-label {
-  font-size: 12px;
-  color: var(--color-text-secondary, #6b7290);
-}
-.cp-gpa-final-value {
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--color-primary, #4f46e5);
-  font-variant-numeric: tabular-nums;
-}
-.cp-gpa-final-value.warn { color: #e0533d; }
-.cp-gpa-warn {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.55;
-  color: var(--color-text-secondary, #6b7290);
-}
-.cp-gpa-warn.warn { color: #e0533d; }
-
 /* 气泡 */
 .cp-row { display: flex; }
 .cp-row.user { justify-content: flex-end; }
@@ -1683,22 +1278,22 @@ function stop() {
 
 .cp-bubble {
   max-width: 84%;
-  padding: 10px 13px;
-  border-radius: 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
   font-size: 13.5px;
   line-height: 1.75;
   word-break: break-word;
   white-space: pre-wrap;
 }
 .cp-row.user .cp-bubble {
-  background: linear-gradient(135deg, var(--color-primary, #4f46e5), #7c8cf8);
+  background: linear-gradient(135deg, var(--color-primary, #4f46e5), var(--color-primary-hover, #4338ca));
   color: #fff;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.24);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
 }
 .cp-row.assistant .cp-bubble {
   background: var(--color-bg-card, #fff);
-  color: var(--color-text-body, #3b3f52);
+  color: var(--color-text-body, #334155);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.07));
   border-bottom-left-radius: 4px;
 }
@@ -1770,12 +1365,12 @@ function stop() {
   margin-bottom: 7px;
 }
 .cp-mode-tag.knowledge {
-  color: #0f9d8a;
+  color: var(--color-success, #10b981);
   background: rgba(16, 185, 129, 0.12);
 }
 .cp-mode-tag.persona {
-  color: #8b7cf6;
-  background: rgba(139, 124, 246, 0.13);
+  color: var(--color-primary, #4f46e5);
+  background: var(--color-primary-light, #e0e7ff);
 }
 
 /* 来源 */
@@ -1860,7 +1455,7 @@ function stop() {
 }
 .cp-loading-text {
   font-size: 13px;
-  color: #8a8f99;
+  color: var(--color-text-secondary, #64748b);
 }
 .cp-typing i {
   width: 6px;
@@ -1921,7 +1516,7 @@ function stop() {
 .cp-input::-webkit-scrollbar-thumb { display: none; }
 .cp-input:focus {
   border-color: var(--color-primary, #4f46e5);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+  box-shadow: 0 0 0 2px var(--color-primary-light, #e0e7ff);
 }
 .cp-send {
   width: 40px;
@@ -1934,13 +1529,17 @@ function stop() {
   align-items: center;
   justify-content: center;
   color: #fff;
-  background: linear-gradient(135deg, var(--color-primary, #4f46e5), #7c8cf8);
-  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.28);
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  background: var(--color-primary, #4f46e5);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.24);
+  transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
 }
-.cp-send:hover:not(:disabled) { transform: translateY(-1px); }
+.cp-send:hover:not(:disabled) {
+  background: var(--color-primary-hover, #4338ca);
+  transform: translateY(-1px);
+}
 .cp-send:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
-.cp-send.stop { background: rgba(107, 114, 128, 0.85); box-shadow: none; }
+.cp-send.stop { background: var(--color-danger, #ef4444); box-shadow: none; }
+.cp-send.stop:hover { background: var(--color-danger, #ef4444); }
 
 /* ================= 动效 ================= */
 .cp-pop-enter-active, .cp-pop-leave-active { transition: all 0.2s ease; }
@@ -1976,11 +1575,11 @@ function stop() {
     height: 82vh;
     height: 82dvh;
     max-height: 82dvh;
-    border-radius: 18px 18px 0 0;
+    border-radius: 16px 16px 0 0;
     border-left: none;
     border-right: none;
     border-bottom: none;
-    box-shadow: 0 -10px 40px rgba(24, 26, 54, 0.28);
+    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.18);
     /* 移动端 GPU 上毛玻璃开销大，改用纯色背景 */
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -1991,7 +1590,7 @@ function stop() {
     cursor: default;
     touch-action: auto;
   }
-  .cp-avatar { width: 52px; height: 66px; border-radius: 10px; }
+  .cp-avatar { width: 40px; height: 40px; padding: 2px; }
   .cp-sub { display: none; }
   .cp-actions { gap: 0; }
   .cp-icon-btn { width: 34px; height: 34px; }
@@ -2015,20 +1614,10 @@ function stop() {
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
   }
   /* iOS 输入框字号小于 16px 会自动放大整个页面 */
-  .cp-input,
-  .cp-gpa-name,
-  .cp-gpa-num,
-  .cp-gpa-sel {
+  .cp-input {
     font-size: 16px;
+    min-height: 44px;
   }
-  .cp-input { min-height: 44px; }
-  .cp-gpa-name,
-  .cp-gpa-num,
-  .cp-gpa-sel { height: 36px; }
-  /* 放大后的控件放不进一行，允许换行避免横向溢出 */
-  .cp-gpa-row-bottom { flex-wrap: wrap; }
-  .cp-gpa-point { margin-left: 0; }
-  .cp-gpa-foot { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* 手机横屏：高度优先，铺满整个可视区 */

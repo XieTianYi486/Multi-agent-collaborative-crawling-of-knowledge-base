@@ -1,5 +1,5 @@
 # ============================================================
-# AI 导员 交互接口
+# AI 助手 交互接口
 # POST /api/v1/counselor/ask      - 同步提问
 # POST /api/v1/counselor/stream   - 流式提问 (SSE)
 # 会话管理 CRUD + 反馈
@@ -12,6 +12,7 @@ import json
 import logging
 import traceback as tb_module
 import uuid as uuid_lib
+from types import SimpleNamespace
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -21,24 +22,26 @@ from starlette.background import BackgroundTask
 
 from app.db.sqlite import get_db, SessionLocal
 from app.api.deps import get_current_active_user
-from app.models.user import User
+from app.core.exceptions import NotFoundException, ValidationException
+from app.core.rate_limit import rate_limit_chat, rate_limit_tts
+from app.models.user import User, utcnow
 from app.models.counselor import CounselorSession, CounselorMessage, CounselorLog
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.counselor import (
     CounselorAskRequest, CounselorSessionCreate,
     CounselorSessionUpdate, CounselorFeedbackRequest,
 )
-from app.services.counselor_service import CounselorService, get_counselor_service
+from app.services.counselor_service import get_counselor_service
 from app.services.sensitive_service import SensitiveService
 from app.services.audit_service import add_audit_log
 
-router = APIRouter(prefix="/counselor", tags=["AI导员"])
+router = APIRouter(prefix="/counselor", tags=["AI助手"])
 logger = logging.getLogger(__name__)
 
 
 BLOCKED_QUESTION_RESPONSE = (
     "同学你好，你的问题里似乎包含了一些不太合适的内容，我这边没办法回应哦～"
-    "如果你遇到了困难，欢迎换个说法告诉我，或者直接联系本班辅导员聊聊。"
+    "如果你遇到了困难，欢迎换个说法告诉我，或者直接联系任课老师或助教聊聊。"
 )
 
 
@@ -55,6 +58,17 @@ def _check_question_sensitive(db: Session, question: str, user: User) -> bool:
     return True
 
 
+def _ensure_session_owned(db: Session, session_id: str, user_id: int) -> None:
+    """校验助手会话属于当前用户，防止通过他人 session_id 读写会话（IDOR）"""
+    owned = (
+        db.query(CounselorSession.id)
+        .filter(CounselorSession.id == session_id, CounselorSession.user_id == user_id)
+        .first()
+    )
+    if owned is None:
+        raise NotFoundException("会话不存在或无权访问")
+
+
 def _error_stream(message: str) -> StreamingResponse:
     """以 SSE 协议返回错误事件（避免抛出裸 HTTP 500，让前端能给出可读提示）"""
     def gen():
@@ -64,11 +78,11 @@ def _error_stream(message: str) -> StreamingResponse:
 
 # ==================== 同步提问 ====================
 
-@router.post("/ask", response_model=APIResponse, summary="导员同步提问")
+@router.post("/ask", response_model=APIResponse, summary="助手同步提问")
 def ask_counselor(
     request: CounselorAskRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(rate_limit_chat),
 ):
     """同步问答：提交问题后等待完整答案返回"""
     counselor = get_counselor_service()
@@ -77,6 +91,10 @@ def ask_counselor(
     username: str = current_user.username
     role_code: str = current_user.role.code if current_user.role else ""
     security_level = _get_security_level(role_code)
+
+    # 会话归属校验：禁止读写他人助手会话
+    if request.session_id:
+        _ensure_session_owned(db, request.session_id, user_id)
 
     if _check_question_sensitive(db, request.question, current_user):
         return APIResponse(
@@ -92,8 +110,6 @@ def ask_counselor(
     result = counselor.ask(
         question=request.question, chat_history=chat_history,
         security_level=security_level,
-        user_profile=_build_user_profile(current_user),
-        memory=_load_cross_session_memory(db, user_id, request.session_id),
     )
 
     # 回答脱敏
@@ -103,16 +119,27 @@ def ask_counselor(
     result["answer"] = masked_answer
 
     session_id = request.session_id or _generate_session_id()
-    if not request.session_id:
-        db.add(CounselorSession(
+    if request.session_id:
+        session = db.query(CounselorSession).filter(
+            CounselorSession.id == session_id,
+            CounselorSession.user_id == user_id,
+        ).first()
+        if session is None:
+            raise NotFoundException("会话不存在或无权访问")
+    else:
+        session = CounselorSession(
             id=session_id, user_id=user_id, title=request.question[:50],
-        ))
+        )
+        db.add(session)
 
     db.add(CounselorMessage(session_id=session_id, role="user", content=request.question))
     db.add(CounselorMessage(
         session_id=session_id, role="assistant", content=result["answer"],
         mode=result.get("mode"), sources=json.dumps(result.get("sources", [])),
     ))
+    # 与流式接口保持一致：同步问答也要更新会话消息数与最后消息时间
+    session.message_count = (session.message_count or 0) + 2
+    session.last_message_at = utcnow()
     db.commit()
 
     counselor.save_log(
@@ -131,19 +158,19 @@ def ask_counselor(
 
 # ==================== 流式提问 ====================
 
-@router.post("/stream", summary="导员流式提问 (SSE)")
+@router.post("/stream", summary="助手流式提问 (SSE)")
 async def ask_counselor_stream(
     request: CounselorAskRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(rate_limit_chat),
 ):
     """
     流式问答接口 (Server-Sent Events)
 
     事件类型:
     - event: token   → {"token": "文字片段"}
-    - event: sources → [{"source_title": "...", "article_no": "..."}]
-    - event: done    → {"full_answer": "...", "mode": "persona|knowledge"}
+    - event: sources → [{"document_name": "...", "chapter": "...", "snippet": "..."}]
+    - event: done    → {"full_answer": "...", "mode": "knowledge|general"}
     - event: error   → {"message": "错误信息"}
     """
     counselor = get_counselor_service()
@@ -154,16 +181,32 @@ async def ask_counselor_stream(
     role_code: str = current_user.role.code if current_user.role else ""
     security_level = _get_security_level(role_code)
 
+    # 会话归属校验：禁止读写他人助手会话（放在 try 外，直接返回 404 业务错误）
+    if request.session_id:
+        _ensure_session_owned(db, request.session_id, user_id)
+
     # 前置阶段（敏感词校验 / 会话与用户消息落库）一旦失败就以 SSE error 事件返回，
     # 避免向客户端抛出无信息的 HTTP 500
+    sensitive_words: List = []
+    keep_chars = 0
     try:
         blocked = _check_question_sensitive(db, question, current_user)
         session_id = request.session_id or _generate_session_id()
 
         if not blocked:
             chat_history = _load_history(db, request.session_id)
-            # 跨会话记忆需在 db.close() 之前取，之后 db 会话已关闭
-            memory = _load_cross_session_memory(db, user_id, request.session_id)
+
+            # 敏感词快照：db 关闭前一次性加载，供流式逐段脱敏（避免逐 token 查库）
+            sensitive_words = [
+                SimpleNamespace(
+                    word=w.word, level=w.level, action=w.action,
+                    replacement=w.replacement,
+                )
+                for w in SensitiveService.get_enabled_words(db)
+            ]
+            # 滑动窗口回退长度：保留"最长敏感词 - 1"个字符，
+            # 保证跨 token 的敏感词完整出现后才替换，不会提前泄露
+            keep_chars = max(0, max((len(w.word) for w in sensitive_words), default=0) - 1)
 
             # 创建/获取会话 + 保存用户消息
             if not request.session_id:
@@ -175,8 +218,8 @@ async def ask_counselor_stream(
             db.commit()
             db.close()
     except Exception as e:
-        logger.exception("导员流式问答前置阶段失败")
-        return _error_stream(f"导员服务暂时不可用，请稍后重试（{type(e).__name__}）")
+        logger.exception("助手流式问答前置阶段失败")
+        return _error_stream(f"助手服务暂时不可用，请稍后重试（{type(e).__name__}）")
 
     # 敏感词拦截（以 SSE 协议返回）
     if blocked:
@@ -188,45 +231,90 @@ async def ask_counselor_stream(
 
     stream_result = {"full_answer": "", "sources": [], "mode": "", "ok": False, "latency": {}}
 
-    user_profile = _build_user_profile(current_user)
-
     async def event_stream():
+        """纯 SSE 流式生成器 —— token 先脱敏再推送"""
+        buffer = ""          # 尚未脱敏的尾部窗口
+        hits_all: list = []  # 本次回答命中的敏感词（按词聚合）
+
+        def mask_and_record(text: str) -> str:
+            """对一段文本脱敏并累计命中记录"""
+            if not text or not sensitive_words:
+                return text
+            masked, hits = SensitiveService.mask_text(text, sensitive_words)
+            for h in hits:
+                existing = next(
+                    (x for x in hits_all if x["word"] == h["word"]), None
+                )
+                if existing is None:
+                    hits_all.append(dict(h))
+                else:
+                    existing["count"] += h["count"]
+            return masked
+
+        def flush_buffer() -> str:
+            """把滑动窗口中的剩余内容脱敏后返回（无内容时返回空串）"""
+            nonlocal buffer
+            if not buffer:
+                return ""
+            out = mask_and_record(buffer)
+            buffer = ""
+            return out
+
         try:
             async for event in counselor.ask_stream(
                 question=question, chat_history=chat_history,
                 security_level=security_level,
-                user_profile=user_profile, memory=memory,
             ):
                 if event["type"] == "token":
-                    stream_result["full_answer"] += event["data"]
-                    yield f"event: token\ndata: {json.dumps({'token': event['data']}, ensure_ascii=False)}\n\n"
+                    buffer += event["data"]
+                    if keep_chars:
+                        if len(buffer) <= keep_chars:
+                            continue  # 尾部不足一个最长敏感词，暂不推送
+                        safe, buffer = buffer[:-keep_chars], buffer[-keep_chars:]
+                    else:
+                        safe, buffer = buffer, ""
+                    safe = mask_and_record(safe)
+                    if not safe:
+                        continue
+                    stream_result["full_answer"] += safe
+                    yield f"event: token\ndata: {json.dumps({'token': safe}, ensure_ascii=False)}\n\n"
 
                 elif event["type"] == "sources":
+                    # 先冲刷窗口尾部，保证正文 token 全部在 sources 之前推送
+                    tail = flush_buffer()
+                    if tail:
+                        stream_result["full_answer"] += tail
+                        yield f"event: token\ndata: {json.dumps({'token': tail}, ensure_ascii=False)}\n\n"
                     stream_result["sources"] = event["data"]
                     yield f"event: sources\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
 
                 elif event["type"] == "done":
                     data = event["data"]
+
+                    # 先冲刷滑动窗口，保证最后一段回答也经过脱敏
+                    tail = flush_buffer()
+                    if tail:
+                        stream_result["full_answer"] += tail
+                        yield f"event: token\ndata: {json.dumps({'token': tail}, ensure_ascii=False)}\n\n"
+
                     stream_result["mode"] = data.get("mode", "")
                     stream_result["latency"] = data.get("latency", {})
 
-                    # 回答脱敏（完成后整体过滤一次）
-                    masked = stream_result["full_answer"]
-                    hits = []
-                    if masked:
+                    # 命中敏感词时统一写一条审计日志（不逐 token 落库）
+                    if hits_all:
                         sdb = SessionLocal()
                         try:
-                            masked, hits = SensitiveService.mask_answer(
-                                masked, sdb, user_id=user_id, username=username,
+                            add_audit_log(
+                                db=sdb, module="counselor", action="sensitive_hit",
+                                status="masked", user_id=user_id, username=username,
+                                target_type="counselor_chat", detail={"hits": hits_all},
                             )
                             sdb.commit()
                         finally:
                             sdb.close()
-                        stream_result["full_answer"] = masked
-                        if hits:
-                            yield f"event: sensitive\ndata: {json.dumps({'full_answer': masked, 'hits': hits}, ensure_ascii=False)}\n\n"
+                        yield f"event: sensitive\ndata: {json.dumps({'full_answer': stream_result['full_answer'], 'hits': hits_all}, ensure_ascii=False)}\n\n"
 
-                    data["full_answer"] = masked
+                    data["full_answer"] = stream_result["full_answer"]
                     data["session_id"] = session_id
                     stream_result["ok"] = True
                     yield f"event: done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -235,11 +323,11 @@ async def ask_counselor_stream(
                     yield f"event: error\ndata: {json.dumps({'message': event['data']}, ensure_ascii=False)}\n\n"
 
         except Exception as e:
-            logger.error("导员流式问答异常:\n%s", tb_module.format_exc())
+            logger.error("助手流式问答异常:\n%s", tb_module.format_exc())
             yield f"event: error\ndata: {json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
 
     def save_assistant_message():
-        """后台任务：流式完成后保存助手消息 + 导员日志"""
+        """后台任务：流式完成后保存助手消息 + 助手日志"""
         if not stream_result["ok"]:
             return
         save_db = SessionLocal()
@@ -258,14 +346,14 @@ async def ask_counselor_stream(
                 CounselorSession.id == session_id
             ).first()
             if sess:
-                sess.message_count = sess.message_count + 2
+                sess.message_count = (sess.message_count or 0) + 2
                 sess.last_message_at = now
 
             latency = stream_result.get("latency", {})
             save_db.add(CounselorLog(
                 session_id=session_id, user_id=user_id, question=question,
                 answer=stream_result["full_answer"], mode=stream_result["mode"],
-                source_titles=[s.get("source_title", "") for s in stream_result.get("sources", [])],
+                source_titles=[(s.get("document_name") or s.get("chapter") or "") for s in stream_result.get("sources", [])],
                 is_answered=1 if stream_result["mode"] == "knowledge" else 0,
                 retrieval_ms=latency.get("retrieval_ms", 0),
                 llm_ms=latency.get("llm_ms", 0),
@@ -274,7 +362,7 @@ async def ask_counselor_stream(
             save_db.commit()
         except Exception:
             save_db.rollback()
-            logger.warning("保存导员助手消息失败:\n%s", tb_module.format_exc())
+            logger.warning("保存助手助手消息失败:\n%s", tb_module.format_exc())
         finally:
             save_db.close()
 
@@ -288,7 +376,7 @@ async def ask_counselor_stream(
 
 # ==================== 会话管理 ====================
 
-@router.get("/sessions", response_model=APIResponse, summary="导员会话列表")
+@router.get("/sessions", response_model=APIResponse, summary="助手会话列表")
 def list_sessions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -308,7 +396,7 @@ def list_sessions(
     ])
 
 
-@router.post("/sessions", response_model=APIResponse, summary="创建导员会话")
+@router.post("/sessions", response_model=APIResponse, summary="创建助手会话")
 def create_session(
     request: CounselorSessionCreate,
     db: Session = Depends(get_db),
@@ -316,7 +404,7 @@ def create_session(
 ):
     session = CounselorSession(
         id=_generate_session_id(), user_id=current_user.id,
-        title=request.title or "与导员的新对话",
+        title=request.title or "与 AI 助手的新对话",
     )
     db.add(session)
     db.flush()
@@ -324,7 +412,7 @@ def create_session(
                        data={"session_id": session.id, "title": session.title})
 
 
-@router.patch("/sessions/{session_id}", response_model=APIResponse, summary="更新导员会话")
+@router.patch("/sessions/{session_id}", response_model=APIResponse, summary="更新助手会话")
 def update_session(
     session_id: str, request: CounselorSessionUpdate,
     db: Session = Depends(get_db),
@@ -342,7 +430,7 @@ def update_session(
     return APIResponse(code=0, message="更新成功")
 
 
-@router.delete("/sessions/{session_id}", response_model=APIResponse, summary="删除导员会话")
+@router.delete("/sessions/{session_id}", response_model=APIResponse, summary="删除助手会话")
 def delete_session(
     session_id: str,
     db: Session = Depends(get_db),
@@ -359,7 +447,7 @@ def delete_session(
     return APIResponse(code=0, message="会话已删除")
 
 
-@router.get("/sessions/{session_id}/messages", response_model=APIResponse, summary="导员会话消息")
+@router.get("/sessions/{session_id}/messages", response_model=APIResponse, summary="助手会话消息")
 def get_session_messages(
     session_id: str,
     page: int = Query(default=1, ge=1),
@@ -400,20 +488,27 @@ def get_session_messages(
 
 # ==================== 反馈 ====================
 
-@router.post("/feedback", response_model=APIResponse, summary="提交导员回答反馈")
+@router.post("/feedback", response_model=APIResponse, summary="提交助手回答反馈")
 def submit_feedback(
     request: CounselorFeedbackRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    """提交助手回答反馈（必须关联到本人会话中最近的一条助手日志）"""
+    if not request.session_id:
+        raise ValidationException("缺少 session_id，无法关联问答记录")
+    _ensure_session_owned(db, request.session_id, current_user.id)
+
     log = db.query(CounselorLog).filter(
         CounselorLog.user_id == current_user.id,
         CounselorLog.session_id == request.session_id,
     ).order_by(CounselorLog.created_at.desc()).first()
-    if log:
-        log.feedback = request.feedback
-        log.feedback_reason = request.reason
-        db.flush()
+    if log is None:
+        raise NotFoundException("未找到可反馈的问答记录")
+
+    log.feedback = request.feedback
+    log.feedback_reason = request.reason
+    db.flush()
     return APIResponse(code=0, message="感谢你的反馈")
 
 
@@ -437,8 +532,10 @@ EDGE_TTS_VOICES = [
 
 
 @router.get("/tts/voices", summary="获取 Edge TTS 可用音色列表")
-async def list_tts_voices():
-    """返回精选的中文 Edge TTS 音色列表"""
+async def list_tts_voices(
+    current_user: User = Depends(get_current_active_user),
+):
+    """返回精选的中文 Edge TTS 音色列表（需登录）"""
     return APIResponse(code=0, message="success", data=EDGE_TTS_VOICES)
 
 
@@ -446,7 +543,7 @@ async def list_tts_voices():
 async def tts_synthesize(
     text: str = Query(..., description="要合成的文本"),
     voice: str = Query("zh-CN-XiaoxiaoNeural", description="音色 ShortName"),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(rate_limit_tts),
 ):
     """
     使用 Edge TTS（微软 Edge 浏览器语音引擎）将文本合成为 mp3 音频流。
@@ -489,18 +586,6 @@ async def tts_synthesize(
 
 # ==================== 工具函数 ====================
 
-def _build_user_profile(user: User) -> dict:
-    """
-    从登录态取出导员可用的学生身份信息（姓名 / 院系班级）。
-
-    仅供 system prompt 用于称呼同学，不额外落地存储。
-    """
-    return {
-        "name": (user.real_name or user.username or "").strip(),
-        "department": (user.department or "").strip(),
-    }
-
-
 def _load_history(db: Session, session_id: Optional[str]) -> Optional[List[dict]]:
     """加载会话历史（取最近的 20 条，供多轮上下文）"""
     if not session_id:
@@ -515,57 +600,6 @@ def _load_history(db: Session, session_id: Optional[str]) -> Optional[List[dict]
         return None
     msgs.reverse()  # 倒序取最近 20 条后翻回时间正序，保证喂给模型的是最近的上下文
     return [{"role": m.role, "content": m.content} for m in msgs]
-
-
-# 跨会话记忆最多取该用户最近多少条消息（配成约 4 轮问答）
-CROSS_SESSION_MEMORY_MESSAGES = 8
-
-
-def _load_cross_session_memory(
-    db: Session, user_id: int, current_session_id: Optional[str],
-) -> Optional[List[dict]]:
-    """
-    加载跨会话记忆：同一用户在其他会话里的最近若干轮问答。
-
-    只取最近 8 条消息并截断，避免历史记忆挤占 prompt 预算；
-    当前会话的内容不在此列（已由 chat_history 提供）。
-    """
-    query = (
-        db.query(CounselorMessage)
-        .join(CounselorSession, CounselorSession.id == CounselorMessage.session_id)
-        .filter(CounselorSession.user_id == user_id)
-    )
-    if current_session_id:
-        query = query.filter(CounselorMessage.session_id != current_session_id)
-
-    msgs = query.order_by(
-        CounselorMessage.created_at.desc(), CounselorMessage.id.desc(),
-    ).limit(CROSS_SESSION_MEMORY_MESSAGES).all()
-    if not msgs:
-        return None
-    msgs.reverse()
-
-    def _date(msg) -> str:
-        return msg.created_at.strftime("%m-%d") if msg.created_at else ""
-
-    turns: List[dict] = []
-    pending_question = None
-    for msg in msgs:
-        if msg.role == "user":
-            pending_question = msg
-        elif pending_question is not None:
-            turns.append({
-                "question": pending_question.content,
-                "answer": msg.content,
-                "date": _date(pending_question) or _date(msg),
-            })
-            pending_question = None
-    # 末尾只剩提问、没有回答的，也保留下来避免丢信息
-    if pending_question is not None:
-        turns.append({
-            "question": pending_question.content, "answer": "", "date": _date(pending_question),
-        })
-    return turns or None
 
 
 def _iso(dt) -> Optional[str]:

@@ -6,7 +6,7 @@
 
 | 文件 | 说明 |
 |---|---|
-| `qa_dataset.json` | 74 道评测题：ESP32硬件 10、ESP-IDF开发 11、无线通信 9、物联网云平台 8、电子电路 6、AI边缘应用 6、AI技术前沿 9、树莓派 5、拒答无关 6、多轮指代 4（全部密级1） |
+| `qa_dataset.json` | v2.1 共 103 道评测题：ESP32硬件 12、ESP-IDF开发 12、树莓派 12、无线通信 12、电子电路 12、拒答无关 10、AI技术前沿 9、物联网云平台 8、AI边缘应用 8、多轮指代 8（全部密级1，其中拒答 10 题） |
 | `run_eval.py` | 评测脚本：检索质量（Recall/MRR/nDCG）+ 端到端（LLM 判分/引用正确率/拒答统计） |
 | `results/` | 评测结果 JSON 输出（自动生成，已 gitignore） |
 
@@ -23,19 +23,75 @@
 | 级别 | 前置条件 | 命令 | 产出 |
 |---|---|---|---|
 | L1 检索（离线） | 无（seed 完成即可） | `python eval/run_eval.py --retrievers bm25` | BM25 的 HitRate/Recall/MRR/nDCG |
-| L2 全配置对比 | DASHSCOPE_API_KEY | `python eval/run_eval.py --retrievers all` | 五配置对比：BM25 / Dense / Hybrid / +Rerank / +Rewrite |
-| L3 端到端 | DASHSCOPE_API_KEY | `python eval/run_eval.py --mode e2e --sample-size 40` | 答案正确率（LLM judge 0~2 分）、文档引用正确率 exact/partial、拒答准确率、平均延迟 |
+| L2 全配置对比 | DASHSCOPE_API_KEY | `python eval/run_eval.py --retrievers all` | 八配置对比：BM25 / Dense / Hybrid / Hybrid+RRF / +Rerank / +RRF+Rerank / +Rewrite / +条件改写 |
+| L3 端到端 | DASHSCOPE_API_KEY | `python eval/run_eval.py --mode e2e` | 答案正确率（LLM judge 0~2 分）、文档引用 exact/partial/precision/recall、拒答准确率、平均延迟 |
 
-> 注意：向量/混合检索依赖 embedding API 调用（非 LLM），所以"无 Key 可跑检索评估"严格指 BM25 一路；e2e 建议抽样 30~40 题控制配额。
+> 注意：
+> - 向量/混合检索依赖 embedding API 调用（非 LLM），所以"无 Key 可跑检索评估"严格指 BM25 一路。
+> - e2e 会先清空问答缓存再跑，保证延迟与答案反映真实链路；103 题全量约需 20 分钟，配额紧张时用 `--sample-size 40` 抽样。
+> - 引用指标以检索返回的 sources 文档名为准（线上回答用 [来源N] 标注，不写《文档》第X条）。
+
+## 检索对比实验结果（2026-11-07，security_level=1，v2.1 数据集可答题 n=93）
+
+| 配置 | HitRate@5 | Recall@10 | MRR@10 | nDCG@10 | 平均延迟 |
+|---|---|---|---|---|---|
+| BM25（离线） | 0.763 | 0.817 | 0.660 | 0.742 | 91.5ms |
+| Hybrid（weighted 0.5/0.5） | 0.753 | 0.882 | 0.641 | 0.751 | 253.6ms |
+| Hybrid + RRF | 0.753 | 0.871 | 0.589 | 0.709 | 212.5ms |
+| Hybrid + Rerank | 0.903 | 0.903 | 0.796 | 0.900 | 1567ms |
+| Hybrid + Rerank + 全量改写 | 0.903 | 0.909 | 0.788 | 0.893 | 3849ms |
+| Hybrid + Rerank + 条件改写 | **0.935** | **0.930** | **0.808** | **0.915** | 2251ms |
+
+结论：
+- RRF 在本语料上与加权融合的 HitRate 持平，但 MRR/nDCG 更低，因此保留 weighted 作为默认（RRF 仅作为可切换选项）。
+- 重排收益最大（HitRate@5 从 0.753 提升到 0.903，+15 个百分点），是当前最有效的优化。
+- 全量改写与不改写质量持平但延迟翻倍（3.8s）；条件改写把延迟控制在 2.25s，且多轮指代题加入后质量反超不改写（HitRate@5 0.935 vs 0.903），因此作为默认改写策略。
+
+> 2026-09-01 的旧结果（hybrid 0.544、+rerank 0.574）对应旧语料/索引，已不可直接与当前结果比较。
+
+## 端到端实验结果（2026-11-07，security_level=1，v2.1 数据集 103 题：93 正常 + 10 拒答）
+
+| 指标 | 结果 |
+|---|---|
+| 答案正确率（judge=2 占比） | **90.3%**（84/93），平均分 1.828/2 |
+| 引用命中（partial，至少引用到一篇正确文档） | 88/93 = **94.6%** |
+| 引用完全一致（exact） | 15/93 = 16.1% |
+| 引用 precision / recall | 0.425 / **0.946** |
+| 拒答准确率（应拒答 10 题） | 9/10 = 90% |
+| 正常题误拒率 | 2/93 = 2.2% |
+| 平均端到端延迟 | 10.4 s |
+
+分类别完全正确率：
+
+| 分类 | n | 平均分 | 完全正确率 |
+|---|---|---|---|
+| ESP-IDF开发 | 12 | 2.000 | 100% |
+| 无线通信 | 12 | 2.000 | 100% |
+| 物联网云平台 | 8 | 2.000 | 100% |
+| AI边缘应用 | 8 | 2.000 | 100% |
+| 电子电路 | 12 | 1.917 | 91.7% |
+| 多轮指代 | 8 | 1.750 | 87.5% |
+| ESP32硬件 | 12 | 1.750 | 83.3% |
+| AI技术前沿 | 9 | 1.556 | 77.8% |
+| 树莓派 | 12 | 1.500 | 75.0% |
+
+结论：
+- 引用 recall 0.946 说明答案基本都能引用到正确文档；precision 0.425 偏低主要是回答习惯同时列出多篇相关来源（top-5），并非引错文档；exact 口径要求引用集合与标准完全一致，因此天然偏低。
+- 薄弱分类为树莓派（75%）、AI技术前沿（77.8%）、ESP32硬件（83.3%）与多轮指代（87.5%），后续可优先补强这些分类的语料与提示词。
+- 误拒 2 题、漏拒 1 题的具体题目见结果 JSON 的 `per_item` / 拒答记录，需逐题复核。
+
+> 结果文件：`results/eval_e2e_level1_20261107_v21.json`。
 
 ## 实验矩阵（论文第 6 章表格）
 
-1. **检索对比实验**：BM25 vs Dense vs Hybrid vs Hybrid+Rerank vs Hybrid+Rerank+Rewrite，指标 HitRate@5、Recall@5/10、MRR@10、nDCG@10
-2. **消融实验**：重排开关（Hybrid vs Hybrid+Rerank）、查询改写开关（Hybrid+Rerank vs Hybrid+Rerank+Rewrite，重点看"多轮指代"子集）
+1. **检索对比实验**：BM25 vs Dense vs Hybrid vs Hybrid+RRF vs Hybrid+Rerank vs Hybrid+RRF+Rerank，指标 HitRate@5、Recall@5/10、MRR@10、nDCG@10
+2. **消融实验**：重排开关（Hybrid vs Hybrid+Rerank）、融合策略（Hybrid vs Hybrid+RRF）、查询改写开关（+Rerank vs +Rerank+全量改写 vs +Rerank+条件改写，重点看"多轮指代"子集）
 3. **密级过滤实验**：同一批题分别以 `--security-level 1` 与 `--security-level 3` 运行，验证全部密级1教学文档在低密级下均可召回
-4. **端到端评测**：LLM judge 答案正确率、文档引用正确率（exact=引用集合与标准完全一致 / partial=至少命中一条）、拒答准确率（应拒答题的拒答率 + 正常题的误拒率）
+4. **端到端评测**：LLM judge 答案正确率、文档引用正确率（exact=引用集合与标准完全一致 / partial=至少命中一条 / precision、recall=引用集合与标准文档的交集比例）、拒答准确率（应拒答题的拒答率 + 正常题的误拒率）
+5. **分类别分析**：e2e 结果 JSON 内 `by_category` 给出各分类的平均分与完全正确率，`per_item` 保留逐题判分、引用文档与延迟，便于定位薄弱分类
 
 ## 数据集维护
 
 - 教学文档题目的 `must_contain` 以官方文档原文为准；若更换语料后某题 Recall 恒为 0，先检查语料中该文档或措辞是否缺失，再修正标注。
 - 新增题目时遵守 `tests/test_eval_dataset.py` 的 schema 校验。
+- 语料中同一官方文档可能同时存在“原始标题”和“原始标题 - ESP32 - … 编程指南文档”两份副本，端到端引用指标已做标题归一化（`canonical_doc_name`）；检索指标仍按原样统计，若后续去重语料需重跑。

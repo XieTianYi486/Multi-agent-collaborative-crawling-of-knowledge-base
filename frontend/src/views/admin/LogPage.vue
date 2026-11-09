@@ -19,10 +19,10 @@
       <div class="filter-row">
         <el-input v-model="filters.keyword" placeholder="搜索问题或回答关键词..." :prefix-icon="Search" clearable style="width:280px" @clear="loadLogs(1)" @keyup.enter="loadLogs(1)" />
         <el-select v-model="filters.is_answered" placeholder="命中状态" clearable style="width:130px" @change="loadLogs(1)">
-          <el-option label="全部" :value="null" /><el-option label="已命中" :value="1" /><el-option label="未命中" :value="0" />
+          <el-option label="全部" value="" /><el-option label="已命中" :value="1" /><el-option label="未命中" :value="0" />
         </el-select>
         <el-select v-model="filters.feedback" placeholder="用户反馈" clearable style="width:130px" @change="loadLogs(1)">
-          <el-option label="全部" :value="null" /><el-option label="未反馈" :value="0" /><el-option label="👍 点赞" :value="1" /><el-option label="👎 点踩" :value="2" />
+          <el-option label="全部" value="" /><el-option label="未反馈" :value="0" /><el-option label="👍 点赞" :value="1" /><el-option label="👎 点踩" :value="2" />
         </el-select>
         <el-date-picker v-model="filters.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD" style="width:260px" @change="loadLogs(1)" />
         <el-button :icon="Refresh" @click="resetFilters">重置</el-button>
@@ -86,7 +86,7 @@ const loading = ref(false)
 const exportingAll = ref(false)
 const logs = ref<any[]>([])
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
-const filters = reactive({ keyword: '', is_answered: null as number | null, feedback: null as number | null, dateRange: null as [string, string] | null })
+const filters = reactive({ keyword: '', is_answered: '' as number | '', feedback: '' as number | '', dateRange: null as [string, string] | null })
 const stats = reactive({ total_queries: 0, answer_rate: 0, satisfaction_rate: 0, unanswered_queries: 0 })
 const md = new MarkdownIt({ breaks: true, linkify: true })
 function renderMD(text: string) { return md.render(text || '') }
@@ -97,8 +97,8 @@ async function loadLogs(page?: number) {
   try {
     const params: any = { page: pagination.page, page_size: pagination.page_size }
     if (filters.keyword) params.keyword = filters.keyword
-    if (filters.is_answered !== null) params.is_answered = filters.is_answered
-    if (filters.feedback !== null) params.feedback = filters.feedback
+    if (filters.is_answered !== '' && filters.is_answered !== null) params.is_answered = filters.is_answered
+    if (filters.feedback !== '' && filters.feedback !== null) params.feedback = filters.feedback
     if (filters.dateRange && filters.dateRange.length === 2) { params.date_from = filters.dateRange[0]; params.date_to = filters.dateRange[1] }
     const res = await client.get('/admin/logs', { params })
     logs.value = res.data.data?.items || []
@@ -115,7 +115,7 @@ async function loadStats() {
   } catch { /* ignore */ }
 }
 
-function resetFilters() { filters.keyword = ''; filters.is_answered = null; filters.feedback = null; filters.dateRange = null; loadLogs(1) }
+function resetFilters() { filters.keyword = ''; filters.is_answered = ''; filters.feedback = ''; filters.dateRange = null; loadLogs(1) }
 function formatTime(t: string) { if (!t) return '-'; const d = new Date(t.endsWith('Z') ? t : t + 'Z'); const pad = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` }
 
 function exportCSV() {

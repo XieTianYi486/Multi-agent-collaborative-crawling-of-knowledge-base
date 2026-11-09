@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="AI 助手">
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#eef1ff"/>
+      <stop offset="1" stop-color="#dfe4ff"/>
+    </linearGradient>
+    <linearGradient id="visor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b3f7a"/>
+      <stop offset="1" stop-color="#23264d"/>
+    </linearGradient>
+    <linearGradient id="eye" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8ef0ff"/>
+      <stop offset="1" stop-color="#22c3e6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 肩部 -->
+  <path d="M18 124c0-16 20-24 46-24s46 8 46 24z" fill="url(#shell)"/>
+  <path d="M18 124c0-16 20-24 46-24s46 8 46 24z" fill="none" stroke="#c9cffa" stroke-width="2"/>
+
+  <!-- 颈部 -->
+  <rect x="50" y="86" width="28" height="18" rx="9" fill="#e6e9ff"/>
+
+  <!-- 耳机 -->
+  <rect x="10" y="52" width="12" height="26" rx="6" fill="#dfe4ff" stroke="#c2c9f8" stroke-width="2"/>
+  <rect x="106" y="52" width="12" height="26" rx="6" fill="#dfe4ff" stroke="#c2c9f8" stroke-width="2"/>
+
+  <!-- 头部 -->
+  <rect x="20" y="16" width="88" height="76" rx="38" fill="url(#shell)" stroke="#c7cdfa" stroke-width="2"/>
+
+  <!-- 天线 -->
+  <line x1="64" y1="16" x2="64" y2="6" stroke="#aab2ee" stroke-width="3"/>
+  <circle cx="64" cy="5" r="4.5" fill="#5b8cff"/>
+
+  <!-- 面罩 -->
+  <rect x="31" y="34" width="66" height="42" rx="19" fill="url(#visor)"/>
+
+  <!-- 眼睛 -->
+  <circle cx="50" cy="52" r="7" fill="url(#eye)"/>
+  <circle cx="78" cy="52" r="7" fill="url(#eye)"/>
+  <circle cx="47.6" cy="49.4" r="2.2" fill="#ffffff" opacity="0.85"/>
+  <circle cx="75.6" cy="49.4" r="2.2" fill="#ffffff" opacity="0.85"/>
+
+  <!-- 微笑 -->
+  <path d="M52 64q12 8 24 0" fill="none" stroke="#7ee6ff" stroke-width="2.6" stroke-linecap="round"/>
+
+  <!-- 面部高光 -->
+  <path d="M28 26q10-8 24-9" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
+</svg>

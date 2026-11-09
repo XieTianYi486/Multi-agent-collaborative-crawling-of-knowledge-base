@@ -103,15 +103,95 @@
         </div>
       </el-card>
     </div>
+
+    <!-- D. 内容运营健康度 -->
+    <el-card class="health-card" shadow="never">
+      <div class="health-grid">
+        <div class="health-item" v-for="h in healthList" :key="h.label">
+          <div class="health-label">{{ h.label }}</div>
+          <div class="health-value" :style="{ color: h.color }">{{ h.value }}</div>
+          <div class="health-sub">{{ h.sub }}</div>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- E. 文档热度 + 审核与投稿 -->
+    <div class="panel-grid">
+      <el-card class="panel" shadow="never">
+        <template #header>
+          <div class="panel-header">
+            <span>文档热度 TOP 10</span>
+            <span class="panel-hint">近 {{ ops.window_days || 30 }} 天被问答引用</span>
+          </div>
+        </template>
+        <div v-show="ops.top_documents?.length" ref="docHeatChartRef" class="chart hot-chart"></div>
+        <el-empty v-if="!ops.top_documents?.length" description="暂无引用数据" :image-size="60" />
+      </el-card>
+
+      <el-card class="panel" shadow="never">
+        <template #header>
+          <div class="panel-header"><span>审核与投稿</span></div>
+        </template>
+        <div class="doc-kpis">
+          <div class="doc-kpi">
+            <div class="dg-label">待审核</div>
+            <div class="dg-value" :style="{ color: (ops.review?.pending ?? 0) > 0 ? '#e6a23c' : undefined }">
+              {{ ops.review?.pending ?? 0 }}
+            </div>
+          </div>
+          <div class="doc-kpi">
+            <div class="dg-label">平均等待</div>
+            <div class="dg-value">{{ formatWait(ops.review?.avg_wait_hours) }}</div>
+          </div>
+          <div class="doc-kpi">
+            <div class="dg-label">近 7 天通过</div>
+            <div class="dg-value">{{ ops.review?.approved_7d ?? 0 }}</div>
+          </div>
+        </div>
+        <div v-if="(ops.review?.oldest_wait_days ?? 0) > 3" class="review-alert">
+          <el-icon :size="14"><WarningFilled /></el-icon>
+          最久待审核已 {{ ops.review.oldest_wait_days }} 天，建议及时处理
+        </div>
+        <div class="type-title">本期投稿 TOP 5</div>
+        <div v-if="contributorRows.length" class="contrib-list">
+          <div class="contrib-row" v-for="(c, i) in contributorRows" :key="c.name">
+            <span class="contrib-rank" :class="`rank-${i + 1}`">{{ i + 1 }}</span>
+            <span class="contrib-name">{{ c.name }}</span>
+            <span class="contrib-count">{{ c.count }} 篇</span>
+          </div>
+        </div>
+        <el-empty v-else description="本期暂无投稿" :image-size="45" />
+      </el-card>
+    </div>
+
+    <!-- F. 内容增长趋势 -->
+    <el-card class="panel growth-card" shadow="never">
+      <template #header>
+        <div class="panel-header">
+          <span>内容增长趋势</span>
+          <span class="panel-hint">近 14 天每日新增文档</span>
+        </div>
+      </template>
+      <div ref="growthChartRef" class="chart growth-chart"></div>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import * as echarts from 'echarts'
-import { CircleCheck, CircleClose, Star, DataAnalysis, Upload } from '@element-plus/icons-vue'
+import * as echarts from 'echarts/core'
+import { BarChart, LineChart, PieChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import { CircleCheck, CircleClose, Star, DataAnalysis, Upload, WarningFilled } from '@element-plus/icons-vue'
 import client from '@/api/client'
+
+echarts.use([
+  BarChart, LineChart, PieChart,
+  GridComponent, LegendComponent, TooltipComponent,
+  CanvasRenderer,
+])
 
 const router = useRouter()
 
@@ -119,11 +199,17 @@ const overview = ref<any>({})
 const docStats = ref<any>({ total_documents: 0, total_chunks: 0, total_size_bytes: 0, by_file_type: {} })
 const hotQuestions = ref<any[]>([])
 const unansweredQuestions = ref<any[]>([])
+const ops = ref<any>({})
 
 const qaChartRef = ref<HTMLElement>()
 const hotChartRef = ref<HTMLElement>()
-let qaChart: echarts.ECharts | null = null
-let hotChart: echarts.ECharts | null = null
+const docHeatChartRef = ref<HTMLElement>()
+const growthChartRef = ref<HTMLElement>()
+type EChartsInstance = ReturnType<typeof echarts.init>
+let qaChart: EChartsInstance | null = null
+let hotChart: EChartsInstance | null = null
+let docHeatChart: EChartsInstance | null = null
+let growthChart: EChartsInstance | null = null
 
 const teal = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4F46E5'
 
@@ -136,6 +222,27 @@ const kpiList = computed(() => [
 ])
 
 const answerRate = computed(() => overview.value.answer_rate ?? 0)
+
+// 内容运营健康度
+const healthList = computed(() => {
+  const h = ops.value.health || {}
+  return [
+    { label: '即将到期', value: h.expiring_30d ?? 0, sub: '30 天内', color: '#e6a23c' },
+    { label: '已过期', value: h.expired ?? 0, sub: '已停止检索', color: h.expired > 0 ? '#f56c6c' : '#67c23a' },
+    { label: '补采待处理', value: h.collection_pending ?? 0, sub: '未命中转采集', color: '#409eff' },
+    { label: '补采已完成', value: h.collection_done_14d ?? 0, sub: '近 14 天', color: '#67c23a' },
+  ]
+})
+
+function formatWait(hours?: number): string {
+  if (!hours || hours <= 0) return '—'
+  if (hours < 24) return `${hours} 小时`
+  return `${(hours / 24).toFixed(1)} 天`
+}
+
+const contributorRows = computed<{ name: string; count: number }[]>(() =>
+  (ops.value.contributors || []).map((c: any) => ({ name: c.name, count: c.count }))
+)
 
 // 文件类型分布（转成带百分比列表，按数量降序）
 const fileTypes = computed(() => {
@@ -165,16 +272,18 @@ function formatTime(t: string) {
 
 async function loadStats() {
   try {
-    const [sysRes, docRes, hotRes, unansweredRes] = await Promise.all([
+    const [sysRes, docRes, hotRes, unansweredRes, opsRes] = await Promise.all([
       client.get('/admin/stats/overview'),
       client.get('/documents/stats/overview'),
       client.get('/admin/stats/hot-questions', { params: { limit: 10 } }),
       client.get('/admin/stats/unanswered', { params: { page: 1, page_size: 10 } }),
+      client.get('/admin/stats/operations', { params: { days: 30 } }),
     ])
     overview.value = sysRes.data.data || {}
     docStats.value = docRes.data.data || docStats.value
     hotQuestions.value = hotRes.data.data || []
     unansweredQuestions.value = unansweredRes.data.data?.items || []
+    ops.value = opsRes.data.data || {}
     await nextTick()
     renderCharts()
   } catch { /* ignore */ }
@@ -183,6 +292,8 @@ async function loadStats() {
 function renderCharts() {
   renderQaChart()
   renderHotChart()
+  renderDocHeatChart()
+  renderGrowthChart()
 }
 
 function renderQaChart() {
@@ -228,9 +339,59 @@ function renderHotChart() {
   }
 }
 
+function renderDocHeatChart() {
+  if (!docHeatChartRef.value) return
+  docHeatChart = echarts.init(docHeatChartRef.value)
+  const list = [...(ops.value.top_documents || [])].slice(0, 10).reverse()
+  docHeatChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 8, right: 34, bottom: 8, top: 10, containLabel: true },
+    xAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(128,128,128,.12)' } } },
+    yAxis: {
+      type: 'category',
+      data: list.map((d: any) => d.title.length > 14 ? d.title.slice(0, 14) + '…' : d.title),
+    },
+    series: [{
+      type: 'bar', barWidth: 14, itemStyle: { borderRadius: [0, 7, 7, 0], color: '#9b59b6' },
+      label: { show: true, position: 'right', color: '#909399' },
+      data: list.map((d: any) => d.citations),
+    }],
+  })
+}
+
+function renderGrowthChart() {
+  if (!growthChartRef.value) return
+  growthChart = echarts.init(growthChartRef.value)
+  const list = ops.value.growth || []
+  growthChart.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 8, right: 24, bottom: 8, top: 24, containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: list.map((g: any) => g.date.slice(5)),
+    },
+    yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: 'rgba(128,128,128,.12)' } } },
+    series: [{
+      type: 'line', smooth: true, symbolSize: 6,
+      itemStyle: { color: teal },
+      lineStyle: { width: 2, color: teal },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(79,70,229,.28)' },
+          { offset: 1, color: 'rgba(79,70,229,.02)' },
+        ]),
+      },
+      data: list.map((g: any) => g.count),
+    }],
+  })
+}
+
 function resizeCharts() {
   qaChart?.resize()
   hotChart?.resize()
+  docHeatChart?.resize()
+  growthChart?.resize()
 }
 
 onMounted(() => {
@@ -242,6 +403,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeCharts)
   qaChart?.dispose()
   hotChart?.dispose()
+  docHeatChart?.dispose()
+  growthChart?.dispose()
 })
 
 function goUpload() {
@@ -301,9 +464,45 @@ function goUpload() {
 .unanswered-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--color-border); }
 .unanswered-footer .hint { font-size: 13px; color: var(--color-text-secondary); }
 
+/* 内容运营健康度 */
+.health-card { border-radius: 12px; margin-bottom: 20px; }
+.health-card :deep(.el-card__body) { padding: 8px 0; }
+.health-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+.health-item { padding: 14px 24px; text-align: center; border-right: 1px solid var(--color-border); }
+.health-item:last-child { border-right: none; }
+.health-label { font-size: 13px; color: var(--color-text-secondary); }
+.health-value { font-size: 24px; font-weight: 700; margin: 4px 0; line-height: 1.2; }
+.health-sub { font-size: 12px; color: var(--color-text-placeholder); }
+
+/* 文档热度 / 审核与投稿 */
+.panel-hint { font-size: 12px; font-weight: 400; color: var(--color-text-placeholder); }
+.review-alert {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 12px; padding: 8px 12px; border-radius: 8px;
+  background: rgba(230, 162, 60, 0.12); color: #e6a23c; font-size: 12px;
+}
+.contrib-list { display: flex; flex-direction: column; gap: 8px; }
+.contrib-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.contrib-rank {
+  width: 22px; height: 22px; line-height: 22px; text-align: center;
+  border-radius: 50%; background: var(--color-bg-hover); color: var(--color-text-secondary);
+  font-size: 12px; font-weight: 600; flex-shrink: 0;
+}
+.contrib-rank.rank-1 { background: #fef0f0; color: #f56c6c; }
+.contrib-rank.rank-2 { background: #fdf6ec; color: #e6a23c; }
+.contrib-rank.rank-3 { background: #f0f9eb; color: #67c23a; }
+.contrib-name { flex: 1; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contrib-count { color: var(--color-text-secondary); font-weight: 600; }
+
+/* 内容增长 */
+.growth-card { margin-bottom: 20px; }
+.growth-chart { height: 220px; }
+
 @media (max-width: 900px) {
   .kpi-card :deep(.el-card__body) { grid-template-columns: repeat(2, 1fr); }
   .kpi-item { border-bottom: 1px solid var(--color-border); border-right: none; }
+  .health-grid { grid-template-columns: repeat(2, 1fr); }
+  .health-item { border-bottom: 1px solid var(--color-border); }
   .panel-grid { grid-template-columns: 1fr; }
 }
 </style>

@@ -144,9 +144,9 @@ def ensure_admin(db: Session) -> int:
         ("超级管理员", "super_admin", "拥有系统全部权限", ["*"]),
         ("知识库管理员", "knowledge_admin", "管理文档和知识库内容",
          ["documents:*", "categories:*", "logs:read", "stats:read"]),
-        ("部门管理员", "dept_admin", "管理部门文档和问答统计",
+        ("院系管理员", "dept_admin", "管理院系文档和问答统计",
          ["documents:read", "stats:read"]),
-        ("普通员工", "employee", "查询知识库文档",
+        ("访客", "employee", "浏览与检索公开教学资料",
          ["chat:ask", "documents:read"]),
     ]
     for name, code, desc, perms in default_roles:

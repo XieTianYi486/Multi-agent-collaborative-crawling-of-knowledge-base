@@ -88,7 +88,7 @@ class Document(Base):
         comment="状态：0=处理中, 1=已发布, 2=已归档, 3=处理失败"
     )
     # ===== 知识审核发布流字段 =====
-    # 文档上传入库后置于"待审核"，仅"已通过"的文档才对普通员工可见/可检索
+    # 文档上传入库后置于"待审核"，仅"已通过"的文档才对学生/访客可见/可检索
     review_status: Mapped[int] = mapped_column(
         Integer, default=1, nullable=False, index=True,
         comment="审核状态：0=草稿, 1=待审核, 2=已通过, 3=已驳回"

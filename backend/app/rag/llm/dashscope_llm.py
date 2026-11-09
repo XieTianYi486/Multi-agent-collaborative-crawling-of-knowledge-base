@@ -7,7 +7,7 @@ import json
 import time
 from typing import AsyncGenerator, Dict, List, Optional
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from app.core.config import settings
 from app.core.exceptions import LLMException
@@ -34,6 +34,14 @@ class ChatLLM:
         self.model = settings.LLM_MODEL
         self.temperature = settings.LLM_TEMPERATURE
         self.max_tokens = settings.LLM_MAX_TOKENS
+        # qwen3 系模型关闭思考模式（仅 dashscope 支持该参数；本地 Ollama 不传）
+        self.extra_body = (
+            {"enable_thinking": False}
+            if (not settings.LLM_ENABLE_THINKING
+                and self.provider == "dashscope"
+                and self.model.startswith("qwen3"))
+            else None
+        )
 
         # API Key: 优先用 LLM_API_KEY，否则回退到 DASHSCOPE_API_KEY（向后兼容）
         api_key = settings.LLM_API_KEY
@@ -48,6 +56,12 @@ class ChatLLM:
             self.provider, _PROVIDER_BASE_URLS["dashscope"])
 
         self._client = OpenAI(
+            api_key=self.api_key,
+            base_url=base_url,
+        )
+        # 流式问答必须用异步客户端：同步流在 async 生成器中会阻塞事件循环，
+        # 导致 SSE 直到整段生成结束才一次性返回（表现为"首字延迟＝总耗时"）。
+        self._async_client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=base_url,
         )
@@ -77,6 +91,7 @@ class ChatLLM:
                 temperature=temperature if temperature is not None else self.temperature,
                 max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                 stream=False,
+                extra_body=self.extra_body,
             )
 
             choice = response.choices[0]
@@ -107,16 +122,17 @@ class ChatLLM:
                 yield f"data: {json.dumps({'token': token})}\n\n"
         """
         try:
-            stream = self._client.chat.completions.create(
+            stream = await self._async_client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=temperature if temperature is not None else self.temperature,
                 max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                 stream=True,
                 stream_options={"include_usage": True},
+                extra_body=self.extra_body,
             )
 
-            for chunk in stream:
+            async for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if delta and delta.content:

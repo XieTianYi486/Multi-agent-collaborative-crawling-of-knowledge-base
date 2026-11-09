@@ -90,6 +90,19 @@
           <p class="detail-content">{{ current.question }}</p>
         </div>
 
+        <div class="detail-block">
+          <div class="detail-label">处理时间线</div>
+          <el-timeline class="ticket-timeline">
+            <el-timeline-item
+              v-for="(step, idx) in timelineSteps"
+              :key="idx"
+              :timestamp="step.timestamp"
+              :type="step.type"
+              :hollow="idx !== timelineSteps.length - 1"
+            >{{ step.content }}</el-timeline-item>
+          </el-timeline>
+        </div>
+
         <div v-if="current.reply" class="detail-block" style="background: var(--color-bg-hover); border-radius: 8px; padding: 12px;">
           <div class="detail-label">· 人工回复（{{ current.handler_name || '管理员' }}）</div>
           <p class="detail-content">{{ current.reply }}</p>
@@ -101,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Tickets, Plus, ArrowRight } from '@element-plus/icons-vue'
 import {
@@ -125,6 +138,57 @@ const createRules: FormRules = {
 
 const detailVisible = ref(false)
 const current = ref<Ticket | null>(null)
+
+interface TimelineStep {
+  content: string
+  timestamp: string
+  type: 'primary' | 'success' | 'warning' | 'danger' | 'info'
+}
+
+const timelineSteps = computed<TimelineStep[]>(() => {
+  const t = current.value
+  if (!t) return []
+  const steps: TimelineStep[] = [
+    { content: '提交工单', timestamp: formatTime(t.created_at), type: 'primary' },
+  ]
+  if (t.status === 'pending') {
+    steps.push({ content: '等待管理员受理', timestamp: '待受理', type: 'warning' })
+  }
+  if (t.handler_name) {
+    steps.push({
+      content: `管理员受理，指派处理人：${t.handler_name}`,
+      timestamp: formatTime(t.updated_at || t.created_at),
+      type: 'info',
+    })
+  }
+  if (t.reply) {
+    steps.push({
+      content: '已人工回复',
+      timestamp: formatTime(t.updated_at || t.created_at),
+      type: 'warning',
+    })
+  }
+  if (t.status === 'resolved') {
+    steps.push({
+      content: '工单已解决',
+      timestamp: formatTime(t.resolved_at || t.updated_at || t.created_at),
+      type: 'success',
+    })
+  } else if (t.status === 'closed') {
+    steps.push({
+      content: '工单已关闭',
+      timestamp: formatTime(t.updated_at || t.created_at),
+      type: 'danger',
+    })
+  } else if (t.status === 'processing' && !t.handler_name) {
+    steps.push({
+      content: '管理员处理中',
+      timestamp: formatTime(t.updated_at || t.created_at),
+      type: 'warning',
+    })
+  }
+  return steps
+})
 
 function statusMeta(s: string) {
   return TICKET_STATUS_LABELS[s] || { label: s, type: 'info' as const }
@@ -212,6 +276,8 @@ onMounted(loadTickets)
 .pagination { margin-top: 20px; display: flex; justify-content: center; }
 
 .detail-body { display: flex; flex-direction: column; gap: 16px; }
+.ticket-timeline { padding-left: 4px; margin-top: 8px; }
+.ticket-timeline :deep(.el-timeline-item__timestamp) { font-size: 12px; }
 .detail-block .detail-label { font-size: 13px; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 6px; }
 .detail-content { margin: 0; font-size: 14px; color: var(--color-text-primary); line-height: 1.6; white-space: pre-wrap; }
 </style>

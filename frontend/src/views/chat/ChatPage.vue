@@ -130,9 +130,12 @@
               :src="authStore.user.avatar_url"
               class="avatar-img"
             />
-            <el-icon v-else-if="msg.role === 'assistant'" :size="20">
-              <Service />
-            </el-icon>
+            <img
+              v-else-if="msg.role === 'assistant'"
+              src="/robot-avatar.svg"
+              class="avatar-img"
+              alt="AI 助手"
+            />
             <el-icon v-else :size="20"><UserFilled /></el-icon>
           </div>
 
@@ -154,6 +157,13 @@
                       style="cursor:pointer"
                       @click="viewDocument(src.document_id)"
                     >{{ src.document_name }}</el-tag>
+                    <el-tag
+                      v-if="src.authority_label"
+                      size="small"
+                      effect="plain"
+                      :type="src.authority_weight && src.authority_weight >= 1.3 ? 'success' : 'info'"
+                      class="source-authority"
+                    >{{ src.authority_label }}</el-tag>
                     <span v-if="src.chapter" class="source-chapter">{{ src.chapter }}</span>
                     <span v-if="src.page" class="source-page">第 {{ src.page }} 页</span>
                     <p class="source-snippet">{{ src.snippet }}</p>
@@ -176,6 +186,13 @@
                 @click="handleFeedback(msg, 2)"
                 title="没帮助"
               >👎</span>
+              <span
+                v-if="canSubmitCollection() && (!msg.sources || msg.sources.length === 0)"
+                class="feedback-btn collection-btn"
+                :class="{ active: collectionSubmitted[msg.id] }"
+                @click="submitCollection(msg)"
+                title="该问题未被知识库覆盖，提交补采需求"
+              >{{ collectionSubmitted[msg.id] ? '已提交补采' : '提交补采' }}</span>
             </div>
           </div>
 
@@ -188,7 +205,7 @@
         <!-- 流式输出 -->
         <div v-if="chatStore.streaming" class="message-row assistant">
           <div class="message-avatar">
-            <el-icon :size="20"><Service /></el-icon>
+            <img src="/robot-avatar.svg" class="avatar-img" alt="AI 助手" />
           </div>
           <div class="message-bubble streaming">
             <span v-html="renderMarkdown(chatStore.streamContent)"></span>
@@ -313,6 +330,7 @@ import { ElMessage } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import client from '@/api/client'
 import { ticketApi } from '@/api/ticket'
+import { collectionApi } from '@/api/collection'
 
 const chatStore = useChatStore()
 const authStore = useAuthStore()
@@ -353,7 +371,7 @@ async function fetchAnnouncements() {
   } catch { /* ignore */ }
 }
 
-/** 分类预设问题（嵌入式开发教学场景） */
+/** 分类预设问题 */
 const presetQuestions = [
   {
     category: 'ESP32 入门',
@@ -417,6 +435,36 @@ const feedbackState = ref<Record<number, number>>({})
 async function handleFeedback(msg: any, fb: number) {
   feedbackState.value[msg.id] = fb
   await chatStore.submitFeedback(fb)
+}
+
+/** ==================== 补采需求（所有登录用户） ==================== */
+const collectionSubmitted = ref<Record<number, boolean>>({})
+
+function canSubmitCollection(): boolean {
+  return true
+}
+
+async function submitCollection(msg: any) {
+  if (collectionSubmitted.value[msg.id]) return
+  const idx = chatStore.messages.findIndex((m) => m.id === msg.id)
+  let question = ''
+  for (let i = idx - 1; i >= 0; i--) {
+    if (chatStore.messages[i].role === 'user') {
+      question = chatStore.messages[i].content
+      break
+    }
+  }
+  if (!question) {
+    ElMessage.warning('未找到对应问题，无法提交补采')
+    return
+  }
+  try {
+    const res = await collectionApi.createRequest({ question, reason: 'missed' })
+    collectionSubmitted.value[msg.id] = true
+    ElMessage.success(res.data.data?.duplicated ? '该问题已在补采队列中' : '补采需求已提交')
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.message || '提交补采需求失败')
+  }
 }
 
 /** 文档查看器 */
@@ -737,6 +785,11 @@ onUnmounted(() => {
   border: 1px dashed #d4b106;
   border-radius: 6px;
 }
+html.dark .sensitive-notice {
+  color: #FBBF24;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.45);
+}
 
 .message-sources { margin-top: 12px; font-size: 13px; }
 
@@ -763,6 +816,7 @@ onUnmounted(() => {
 .feedback-btn:hover { opacity: 0.8; background: var(--color-bg-hover); }
 .feedback-btn.active { opacity: 1; }
 .feedback-btn.active:hover { opacity: 1; }
+.collection-btn { font-size: 12px; opacity: 0.6; color: var(--color-primary); }
 .source-item {
   padding: 8px 0; border-bottom: 1px solid var(--color-border);
 }
@@ -770,6 +824,8 @@ onUnmounted(() => {
 .source-chapter { margin-left: 8px; color: var(--color-text-secondary); }
 .source-page { margin-left: 8px; color: var(--color-text-placeholder); font-size: 12px; }
 .source-snippet { margin: 4px 0 0; color: var(--color-text-body); font-size: 13px; }
+
+.source-authority { margin-left: 6px; }
 
 /* 输入区域 */
 .input-area {
@@ -928,6 +984,25 @@ onUnmounted(() => {
 /* 文档附件图片：自适应容器宽度，防止大图撑破弹窗 */
 .doc-content :deep(img) { max-width: 100%; height: auto; border-radius: 6px; margin: 6px 0; }
 .message-content :deep(img) { max-width: 100%; height: auto; border-radius: 6px; }
+
+/* Markdown 代码块：统一深色底，代码块内部的 code 不再套行内代码底色 */
+.doc-content :deep(pre), .message-content :deep(pre) {
+  background: #1e1e2e; color: #cdd6f4; padding: 14px; border-radius: 8px;
+  overflow-x: auto; line-height: 1.65; margin: 10px 0;
+}
+.doc-content :deep(pre code), .message-content :deep(pre code) {
+  background: transparent; color: inherit; padding: 0; border-radius: 0;
+  font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace;
+  font-size: 13px; white-space: pre;
+}
+/* 行内代码（接口名/宏名）：用中性浅灰底 + 等宽字体，避免整段话被染成主色而显得花 */
+.doc-content :deep(code), .message-content :deep(code) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  padding: 1px 5px; border-radius: 4px;
+  font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace;
+  font-size: 12.5px;
+}
 
 /* 公告栏 */
 .announce-bar {

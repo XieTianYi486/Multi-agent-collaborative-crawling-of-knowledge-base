@@ -55,7 +55,7 @@
     >
       <el-form :model="form" label-width="80px" :rules="rules" ref="formRef">
         <el-form-item label="角色名称" prop="name">
-          <el-input v-model="form.name" placeholder="如：部门管理员" maxlength="20" show-word-limit />
+          <el-input v-model="form.name" placeholder="如：院系管理员" maxlength="20" show-word-limit />
         </el-form-item>
         <el-form-item label="角色编码" prop="code">
           <el-input v-model="form.code" placeholder="如：dept_admin" :disabled="isEditing" maxlength="30" show-word-limit />

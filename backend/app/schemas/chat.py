@@ -17,6 +17,9 @@ class CitationSource(BaseModel):
     snippet: str = Field(..., description="引用片段")
     score: float = Field(..., description="相关性分数")
     source_url: Optional[str] = Field(default=None, description="原文链接（爬虫入库溯源）")
+    authority_weight: float = Field(default=1.0, description="来源权威度权重")
+    authority_label: Optional[str] = Field(default=None, description="来源权威度标签：官方文档/社区资料/转载内容")
+    source_site: Optional[str] = Field(default=None, description="来源站点名称")
 
 
 class AskRequest(BaseModel):

@@ -17,14 +17,15 @@ logger = logging.getLogger(__name__)
 MAX_CHUNK_CHARS = 200
 
 RERANK_SYSTEM_PROMPT = (
-    "你是嵌入式开发技术资料检索专家。给定用户问题和一组编号的文档片段，"
+    "你是嵌入式开发教学资料检索专家。给定用户问题和一组编号的文档片段，"
     "请按与问题的相关性从高到低排序。\n"
     "规则：\n"
     "1. 只输出排序后的编号 JSON 数组，例如 [3, 0, 7, 2, ...]，不要输出任何其他内容。\n"
     "2. 必须包含所有编号，每个编号只出现一次。\n"
-    "3. 判断相关性时优先关注：片段是否包含直接回答问题的技术内容"
-    "（含具体配置步骤、函数/API 名称、参数值、引脚定义、命令等关键要素）；"
-    "与问题核心诉求直接对应的排前面；只泛泛提及概念的排在后面。"
+    "3. 判断相关性时优先关注：片段是否包含直接回答问题的专业内容"
+    "（含算法原理、模型结构、参数设置、实验步骤、代码示例等关键要素）；"
+    "与问题核心诉求直接对应的排前面；只泛泛提及概念的排在后面。\n"
+    "4. 相关性相当时，来源标注为「官方文档」的片段优先于「转载内容」和论坛讨论。"
 )
 
 
@@ -37,7 +38,10 @@ def _format_candidates(question: str, candidates: List[Dict]) -> str:
             content = content[:MAX_CHUNK_CHARS] + "…"
         source = c.get("document_name", "")
         chapter = c.get("chapter", "")
+        authority = c.get("authority_label", "")
         meta = f"{source} - {chapter}" if chapter else source
+        if authority:
+            meta = f"{authority}｜{meta}"
         lines.append(f"[{i}] ({meta}) {content}")
     return "\n".join(lines)
 

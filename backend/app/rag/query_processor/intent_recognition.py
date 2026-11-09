@@ -16,7 +16,7 @@ GREETING_PATTERNS = [
 
 NAVIGATION_PATTERNS = [
     "找一下", "有哪些文档", "帮我找", "查一下文档",
-    "在哪里", "怎么下载", "帮我查", "有哪些法规",
+    "在哪里", "怎么下载", "帮我查", "有哪些开发资料",
 ]
 
 REJECTED_PATTERNS = [
@@ -61,10 +61,10 @@ def detect_intent(question: str) -> IntentType:
 def get_greeting_response(question: str) -> str:
     """闲聊回复"""
     if any(w in question for w in ["你好", "您好", "hi", "hello"]):
-        return "您好！我是人工智能学院教学知识库助手，可以为您检索 ESP32、树莓派、嵌入式开发、智能玩具等方向的教程、官方文档与案例资料。请问有什么可以帮您？"
+        return "您好！我是人工智能学院教学知识库助手，可以为您检索嵌入式开发（ESP32 / ESP-IDF / 树莓派 / 电子电路）等方向的教学讲义、官方文档与项目案例。请问有什么可以帮您？"
     if any(w in question for w in ["谢谢", "感谢"]):
         return "不客气！如果还有其他技术资料方面的问题，随时可以问我。"
-    return "您好！请问有什么 ESP32 / 树莓派 / 嵌入式开发方面的资料需要我帮您查找吗？"
+    return "您好！请问有什么嵌入式开发学习方面的资料需要我帮您查找吗？"
 
 
 def get_rejected_response() -> str:

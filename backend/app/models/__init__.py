@@ -9,8 +9,10 @@ from app.models.announcement import Announcement
 from app.models.ticket import Ticket
 from app.models.audit import AuditLog, SensitiveWord
 from app.models.counselor import (
-    CounselorSession, CounselorMessage, CounselorLog, CounselorKbChunk,
+    CounselorSession, CounselorMessage, CounselorLog,
 )
+from app.models.video import Video
+from app.models.notification import Notification
 
 __all__ = [
     "User", "Role", "Department",
@@ -19,5 +21,7 @@ __all__ = [
     "Announcement",
     "Ticket",
     "AuditLog", "SensitiveWord",
-    "CounselorSession", "CounselorMessage", "CounselorLog", "CounselorKbChunk",
+    "CounselorSession", "CounselorMessage", "CounselorLog",
+    "Video",
+    "Notification",
 ]

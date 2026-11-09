@@ -20,6 +20,9 @@ export interface CitationSource {
   page: number | null
   snippet: string
   score: number
+  authority_weight?: number
+  authority_label?: string | null
+  source_site?: string | null
 }
 
 export interface ChatSession {
@@ -214,13 +217,17 @@ export const useChatStore = defineStore('chat', () => {
     } catch { /* ignore */ }
   }
 
-  /** 重置 */
+  /** 重置（切换账号时调用，避免上一个账号的会话/消息残留） */
   function reset() {
+    abortController?.abort()
+    abortController = null
     sessions.value = []
     activeSessionId.value = null
     messages.value = []
     streaming.value = false
     streamContent.value = ''
+    streamSources.value = []
+    sensitiveNotice.value = []
   }
 
   /** 一键清空所有对话（仅清前端，后端数据保留，刷新不恢复） */

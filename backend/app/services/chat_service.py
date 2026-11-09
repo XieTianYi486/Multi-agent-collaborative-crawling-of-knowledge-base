@@ -8,8 +8,11 @@ import logging
 import time
 import traceback
 import uuid as uuid_lib
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -23,7 +26,7 @@ from app.rag.prompts.chat_prompt import build_chat_messages
 from app.rag.query_processor.intent_recognition import (
     detect_intent, get_greeting_response, get_rejected_response,
 )
-from app.rag.query_processor.query_rewrite import get_query_rewriter
+from app.rag.query_processor.query_rewrite import get_query_rewriter, should_rewrite
 from app.db.cache import cache
 from app.db.sqlite import SessionLocal
 
@@ -130,21 +133,13 @@ class ChatService:
                 }
             cache_key = cache.make_key(question, security_level, scope_sig, prefix="qa")
 
-        # === 第0.5步：查询改写 ===
-        query_rewriter = get_query_rewriter()
-        rewrite_result = query_rewriter.rewrite(question, chat_history)
-        search_query = rewrite_result["rewritten"]
-
-        # === 第1步：混合检索（主查询 + 改写变体多查询增强）===
-        # 单个变体检索失败时降级跳过，仅当全部查询失败才视为检索失败
+        # === 第0.5步：并行改写 + 多路检索 ===
+        # 改写要调用 LLM（约 1s），原始问题检索要调用 embedding（约 0.5s），
+        # 二者互不依赖，并行执行可把首字前的等待时间压缩约一半。
         t_retrieval_start = time.time()
-        queries = [search_query]
-        for v in rewrite_result.get("variants", [])[:2]:
-            if v and v != search_query:
-                queries.append(v)
         try:
-            candidates, query_errors = self._multi_query_search(
-                queries, security_level, settings.FUSION_TOP_K
+            candidates, query_errors = self._retrieve_with_rewrite(
+                question, chat_history, security_level
             )
             if not candidates and query_errors:
                 raise RetrievalException("知识库检索失败: " + "; ".join(query_errors))
@@ -207,6 +202,9 @@ class ChatService:
                 "snippet": c.get("content", "")[:200],
                 "score": round(c.get("score", 0), 4),
                 "source_url": c.get("source_url", ""),
+                "authority_weight": c.get("authority_weight", 1.0),
+                "authority_label": c.get("authority_label", ""),
+                "source_site": c.get("source_site", ""),
             })
 
         # === 总耗时 ===
@@ -292,20 +290,13 @@ class ChatService:
                 return
             cache_key = cache.make_key(question, security_level, scope_sig, prefix="qa")
 
-        # === 第0.5步：查询改写 ===
-        query_rewriter = get_query_rewriter()
-        rewrite_result = query_rewriter.rewrite(question, chat_history)
-        search_query = rewrite_result["rewritten"]
-
-        # === 第1步：混合检索（主查询 + 改写变体多查询增强）===
+        # === 第0.5步：并行改写 + 多路检索 ===
+        # 改写要调用 LLM（约 1s），原始问题检索要调用 embedding（约 0.5s），
+        # 二者互不依赖，并行执行可把首字前的等待时间压缩约一半。
         t_retrieval_start = time.time()
-        queries = [search_query]
-        for v in rewrite_result.get("variants", [])[:2]:
-            if v and v != search_query:
-                queries.append(v)
         try:
-            candidates, query_errors = self._multi_query_search(
-                queries, security_level, settings.FUSION_TOP_K
+            candidates, query_errors = self._retrieve_with_rewrite(
+                question, chat_history, security_level
             )
             if not candidates and query_errors:
                 raise RetrievalException("知识库检索失败: " + "; ".join(query_errors))
@@ -348,6 +339,9 @@ class ChatService:
                 "snippet": c.get("content", "")[:200],
                 "score": round(c.get("score", 0), 4),
                 "source_url": c.get("source_url", ""),
+                "authority_weight": c.get("authority_weight", 1.0),
+                "authority_label": c.get("authority_label", ""),
+                "source_site": c.get("source_site", ""),
             }
             for c in top_chunks
         ]
@@ -463,19 +457,22 @@ class ChatService:
         严格遵循企业发布流与密级控制：
         - 仅"已发布(status=1) + 已通过审核(review_status=2)"的文档可被检索
         - 且密级不得高于用户可访问的安全级别
+        - 已过失效日期(expire_date)的文档不再参与检索（NULL=永久有效）
 
         可选叠加检索范围限定（问答/检索接口传入）：
         - category_ids: 只保留所选分类及其子孙分类下的文档
         - document_ids: 只保留指定文档
 
-        用于对检索召回结果做二次过滤，防止未审核/越权内容被问答引用。
+        用于对检索召回结果做二次过滤，防止未审核/越权/过期内容被问答引用。
         """
         db = SessionLocal()
         try:
+            today = date.today()
             query = db.query(Document.id).filter(
                 Document.status == 1,
                 Document.review_status == 2,
                 Document.security_level <= security_level,
+                or_(Document.expire_date.is_(None), Document.expire_date >= today),
             )
             if category_ids:
                 scope_cats = ChatService._expand_category_ids(db, category_ids)
@@ -501,6 +498,53 @@ class ChatService:
 
     # ==================== 多查询检索 ====================
 
+    def _retrieve_with_rewrite(
+        self,
+        question: str,
+        chat_history: Optional[List[Dict]],
+        security_level: int,
+    ) -> Tuple[List[Dict], List[str]]:
+        """并行执行查询改写与原始问题检索，再并行检索改写变体并合并去重。
+
+        改写调用 LLM、原始问题检索调用 embedding，两者互不依赖；
+        这样首字前只需等待较慢的一路，而不是两段相加。
+        表述完整的长问题在 conditional 模式下跳过改写，直接检索。
+        """
+        if not should_rewrite(question, chat_history):
+            candidates, error = self._search_once(question, security_level, settings.FUSION_TOP_K)
+            return candidates, ([error] if error else [])
+
+        query_rewriter = get_query_rewriter()
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            rewrite_future = executor.submit(
+                query_rewriter.rewrite, question, chat_history
+            )
+            raw_future = executor.submit(
+                self._search_once, question, security_level, settings.FUSION_TOP_K
+            )
+
+            rewrite_result = rewrite_future.result()
+            search_query = rewrite_result["rewritten"]
+
+            queries: List[str] = []
+            for v in [search_query] + list(rewrite_result.get("variants", []))[:2]:
+                if v and v != question and v not in queries:
+                    queries.append(v)
+
+            raw_candidates, raw_error = raw_future.result()
+            if queries:
+                variant_candidates, variant_errors = self._multi_query_search(
+                    queries, security_level, settings.FUSION_TOP_K
+                )
+            else:
+                variant_candidates, variant_errors = [], []
+
+        candidates = self._merge_candidate_batches(
+            [raw_candidates, variant_candidates]
+        )
+        errors = ([raw_error] if raw_error else []) + variant_errors
+        return candidates, errors
+
     def _multi_query_search(
         self,
         queries: List[str],
@@ -508,33 +552,54 @@ class ChatService:
         top_k: int,
     ) -> Tuple[List[Dict], List[str]]:
         """
-        对主查询及其改写变体分别执行混合检索，按 chunk_id 合并去重（保留最高分）。
+        对多个查询变体并行执行混合检索，按 chunk_id 合并去重（保留最高分）。
 
         单个查询失败时降级跳过并记录错误，仅当全部查询失败时调用方才会判定检索失败。
 
         返回: (合并后的候选列表（按分数降序）, 各查询的错误信息列表)
         """
-        merged: Dict[str, Dict] = {}
+        if not queries:
+            return [], []
+
+        batches: List[List[Dict]] = []
         errors: List[str] = []
-        for q in queries:
-            try:
-                results = self.hybrid.search(
-                    query=q, top_k=top_k, security_level=security_level,
-                )
-            except Exception as e:
-                errors.append(str(e))
-                logger.warning(f"多查询检索变体失败: {e}")
-                continue
-            for c in results:
+        with ThreadPoolExecutor(max_workers=min(4, len(queries))) as executor:
+            futures = [
+                executor.submit(self._search_once, q, security_level, top_k)
+                for q in queries
+            ]
+            for future in futures:
+                results, error = future.result()
+                if error:
+                    errors.append(error)
+                batches.append(results)
+        return self._merge_candidate_batches(batches), errors
+
+    def _search_once(
+        self, query: str, security_level: int, top_k: int,
+    ) -> Tuple[List[Dict], Optional[str]]:
+        """执行单次混合检索；失败时返回空结果与错误信息，不影响其余查询。"""
+        try:
+            results = self.hybrid.search(
+                query=query, top_k=top_k, security_level=security_level,
+            )
+            return results, None
+        except Exception as e:
+            logger.warning(f"检索查询失败: {e}")
+            return [], str(e)
+
+    @staticmethod
+    def _merge_candidate_batches(batches: List[List[Dict]]) -> List[Dict]:
+        """按 chunk_id 合并多批检索结果，同一片段保留最高分，最终按分数降序。"""
+        merged: Dict[str, Dict] = {}
+        for batch in batches:
+            for c in batch:
                 cid = c.get("chunk_id", "")
                 if not cid:
                     continue
                 if cid not in merged or c.get("score", 0) > merged[cid].get("score", 0):
                     merged[cid] = c
-        merged_list = sorted(
-            merged.values(), key=lambda x: x.get("score", 0), reverse=True
-        )
-        return merged_list, errors
+        return sorted(merged.values(), key=lambda x: x.get("score", 0), reverse=True)
 
     # ==================== 会话管理 ====================
 

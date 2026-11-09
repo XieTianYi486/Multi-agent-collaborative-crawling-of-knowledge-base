@@ -3,7 +3,7 @@
 # 用户管理、角色管理、问答日志、统计分析、系统配置
 # ============================================================
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -21,6 +21,7 @@ from app.models.user import User, Role, Department
 from app.models.chat import ChatLog, ChatSession, ChatMessage
 from app.models.document import Document
 from app.models.announcement import Announcement
+from app.models.collection import CollectionRequest
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.auth import UserInfo
 
@@ -476,6 +477,147 @@ def get_system_stats(
         "like_count": like_count,
         "dislike_count": dislike_count,
         "satisfaction_rate": round(like_count / (like_count + dislike_count) * 100, 1) if (like_count + dislike_count) > 0 else 0,
+    })
+
+
+def _naive_utc_now() -> datetime:
+    """SQLite DATETIME 不带时区，统一用无时区 UTC 比较"""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+@router.get("/stats/operations", response_model=APIResponse, summary="内容运营统计")
+def get_operations_stats(
+    days: int = Query(default=30, ge=7, le=180, description="统计窗口（天）"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_knowledge_admin),
+):
+    """内容运营视角：文档热度、审核时效、投稿贡献、内容增长与健康度。
+
+    - 文档热度：近期命中回答中引用次数最多的文档（基于 chat_logs.source_doc_ids）
+    - 审核时效：待审核数量、平均等待时长、最久等待、近 7 天通过数
+    - 投稿贡献：统计窗口内上传文档最多的用户
+    - 内容增长：近 14 天每日新增文档
+    - 健康度：近期到期 / 已过期文档、补采需求积压与完成情况
+    """
+    since = _naive_utc_now() - timedelta(days=days)
+    today = date.today()
+
+    # 1) 文档热度：解析命中日志的 source_doc_ids（JSON 数组）
+    counts = {}
+    for (doc_ids,) in (
+        db.query(ChatLog.source_doc_ids)
+        .filter(ChatLog.created_at >= since,
+                ChatLog.is_answered == 1,
+                ChatLog.source_doc_ids.isnot(None))
+        .all()
+    ):
+        if not isinstance(doc_ids, list):
+            continue
+        for did in doc_ids:
+            if isinstance(did, int):
+                counts[did] = counts.get(did, 0) + 1
+
+    top_ids = sorted(counts, key=counts.get, reverse=True)[:10]
+    titles = {}
+    if top_ids:
+        for doc_id, title in db.query(Document.id, Document.title) \
+                .filter(Document.id.in_(top_ids)).all():
+            titles[doc_id] = title
+    top_documents = [
+        {
+            "doc_id": did,
+            "title": titles.get(did, f"文档 #{did}"),
+            "citations": counts[did],
+        }
+        for did in top_ids
+    ]
+
+    # 2) 审核时效
+    pending_rows = db.query(Document.created_at) \
+        .filter(Document.review_status == 1).all()
+    pending = len(pending_rows)
+    if pending:
+        now = _naive_utc_now()
+        waits = [
+            (now - (r[0].replace(tzinfo=None) if r[0].tzinfo else r[0])).total_seconds() / 3600
+            for r in pending_rows
+        ]
+        avg_wait_hours = round(sum(waits) / pending, 1)
+        oldest_wait_days = round(max(waits) / 24, 1)
+    else:
+        avg_wait_hours = oldest_wait_days = 0.0
+    approved_7d = db.query(func.count(Document.id)).filter(
+        Document.review_status == 2,
+        Document.reviewed_at >= _naive_utc_now() - timedelta(days=7),
+    ).scalar() or 0
+
+    # 3) 投稿贡献（窗口内按上传人聚合）
+    contrib_rows = (
+        db.query(Document.created_by, func.count(Document.id))
+        .filter(Document.created_by.isnot(None), Document.created_at >= since)
+        .group_by(Document.created_by)
+        .order_by(func.count(Document.id).desc())
+        .limit(5)
+        .all()
+    )
+    names = {}
+    if contrib_rows:
+        user_ids = [uid for uid, _ in contrib_rows]
+        for u in db.query(User).filter(User.id.in_(user_ids)).all():
+            names[u.id] = u.real_name or u.username
+    contributors = [
+        {"name": names.get(uid, f"用户 #{uid}"), "count": int(cnt)}
+        for uid, cnt in contrib_rows
+    ]
+
+    # 4) 内容增长（近 14 天按日）
+    growth_map = {
+        str(d): int(c)
+        for d, c in db.query(func.date(Document.created_at), func.count(Document.id))
+        .filter(Document.created_at >= _naive_utc_now() - timedelta(days=13))
+        .group_by(func.date(Document.created_at))
+        .all()
+    }
+    growth = [
+        {"date": (today - timedelta(days=i)).isoformat(),
+         "count": growth_map.get((today - timedelta(days=i)).isoformat(), 0)}
+        for i in range(13, -1, -1)
+    ]
+
+    # 5) 健康度：到期文档 + 补采需求
+    expiring_30d = db.query(func.count(Document.id)).filter(
+        Document.expire_date.isnot(None),
+        Document.expire_date >= today,
+        Document.expire_date <= today + timedelta(days=30),
+    ).scalar() or 0
+    expired = db.query(func.count(Document.id)).filter(
+        Document.expire_date < today
+    ).scalar() or 0
+    collection_pending = db.query(func.count(CollectionRequest.id)).filter(
+        CollectionRequest.status.in_((0, 1))
+    ).scalar() or 0
+    collection_done_14d = db.query(func.count(CollectionRequest.id)).filter(
+        CollectionRequest.status == 2,
+        CollectionRequest.updated_at >= _naive_utc_now() - timedelta(days=14),
+    ).scalar() or 0
+
+    return APIResponse(code=0, message="success", data={
+        "window_days": days,
+        "top_documents": top_documents,
+        "review": {
+            "pending": pending,
+            "avg_wait_hours": avg_wait_hours,
+            "oldest_wait_days": oldest_wait_days,
+            "approved_7d": int(approved_7d),
+        },
+        "contributors": contributors,
+        "growth": growth,
+        "health": {
+            "expiring_30d": int(expiring_30d),
+            "expired": int(expired),
+            "collection_pending": int(collection_pending),
+            "collection_done_14d": int(collection_done_14d),
+        },
     })
 
 

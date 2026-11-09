@@ -31,7 +31,10 @@ export function streamQuery(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify({ question, session_id: sessionId }),
+    body: JSON.stringify({
+      question,
+      session_id: sessionId,
+    }),
     signal: controller.signal,
   })
     .then(async (response) => {

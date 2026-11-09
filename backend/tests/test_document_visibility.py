@@ -24,13 +24,13 @@ def _make_doc(db, title, security_level, status, review_status):
 
 
 def test_visible_doc_ids_filters(db):
-    """普通员工仅见公开已发布已通过文档；未发布/待审核对任何人不可见"""
+    """访客仅见公开已发布已通过文档；未发布/待审核对任何人不可见"""
     published_public = _make_doc(db, "公开制度", 1, 1, 2)
     published_secret = _make_doc(db, "机密制度", 3, 1, 2)
     _make_doc(db, "待审核文档", 1, 1, 1)
     _make_doc(db, "未发布文档", 1, 0, 2)
 
-    # 普通员工（密级上限 1）
+    # 访客（密级上限 1）
     assert ChatService._visible_doc_ids(1) == {published_public.id}
     # 管理员（密级上限 4）：机密文档可见，但未发布/待审核仍不可见
     assert ChatService._visible_doc_ids(4) == {

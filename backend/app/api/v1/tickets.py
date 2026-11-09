@@ -17,6 +17,7 @@ from app.api.deps import (
 )
 from app.models.user import User
 from app.models.ticket import Ticket
+from app.services.notification_service import notify
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.ticket import (
     TicketCreateRequest, TicketReplyRequest, TicketStatusRequest, TicketInfo,
@@ -187,6 +188,12 @@ def handle_ticket(
     ticket.status = "resolved"
     ticket.resolved_at = datetime.now(timezone.utc)
     ticket.reply_count += 1
+    if ticket.created_by != current_user.id:
+        notify(
+            db, ticket.created_by, "ticket", "工单已回复",
+            f"你的工单「{ticket.title}」已收到回复：{data.reply[:60]}",
+            "/tickets",
+        )
     db.commit()
     db.refresh(ticket)
     return APIResponse(code=0, message="工单已处理", data=_serialize(ticket, db))
@@ -206,11 +213,21 @@ def update_ticket_status(
     if not ticket:
         return APIResponse(code=1, message="工单不存在")
 
+    old_status = ticket.status
     ticket.status = data.status
     if data.status == "resolved":
         ticket.resolved_at = datetime.now()
     elif data.status == "pending" or data.status == "processing":
         ticket.resolved_at = None
+    if data.status != old_status and ticket.created_by != current_user.id:
+        label = {"pending": "待处理", "processing": "处理中", "resolved": "已解决", "closed": "已关闭"}.get(
+            data.status, data.status
+        )
+        notify(
+            db, ticket.created_by, "ticket", "工单状态更新",
+            f"你的工单「{ticket.title}」状态变为：{label}。",
+            "/tickets",
+        )
     db.commit()
     db.refresh(ticket)
     return APIResponse(code=0, message="状态已更新", data=_serialize(ticket, db))

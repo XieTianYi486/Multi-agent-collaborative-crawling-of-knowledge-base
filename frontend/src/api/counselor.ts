@@ -1,15 +1,16 @@
 /**
- * AI 导员 API 封装
- * 与教学问答（chat.ts）完全独立，走 /api/v1/counselor/*
+ * AI 助手 API 封装
+ * 与教学问答（chat.ts）共用主知识库 RAG，接口路径沿用 /api/v1/counselor/*
  */
 
 export interface CounselorSource {
-  source_title: string
-  article_no: string
-  chapter: string
-  source_url: string
-  snippet: string
-  score: number
+  document_id?: number
+  document_name: string
+  chapter?: string | null
+  page?: number | null
+  source_url?: string | null
+  snippet?: string
+  score?: number
 }
 
 export interface CounselorSession {
@@ -95,7 +96,7 @@ interface CounselorStreamCallbacks {
 }
 
 /**
- * 导员流式提问（SSE）
+ * AI 助手流式提问（SSE）
  * events: token / sources / done / error / sensitive
  */
 export function counselorStream(
@@ -116,7 +117,7 @@ export function counselorStream(
       if (!response.ok) {
         throw new Error(
           response.status >= 500
-            ? `导员服务暂时不可用（HTTP ${response.status}），可能正在启动或重启，请等几秒再试`
+            ? `AI 助手服务暂时不可用（HTTP ${response.status}），可能正在启动或重启，请等几秒再试`
             : `HTTP ${response.status}`,
         )
       }

@@ -1,10 +1,36 @@
 {
   "meta": {
     "name": "人工智能学院教学知识库评测集",
-    "version": "2.0",
+    "version": "2.1",
     "created": "2026-09-01",
     "description": "用于检索质量与端到端问答评测，覆盖 ESP32 / ESP-IDF / 树莓派 / 嵌入式 / 物联网 / AI 教学知识库。gold_chunks 采用 doc + chapter(子串) + must_contain(子串数组) 运行时判定命中，不依赖 chunk_id。category 枚举：ESP32硬件/ESP-IDF开发/树莓派/无线通信/物联网云平台/电子电路/AI边缘应用/AI技术前沿/拒答无关/多轮指代。",
-    "categories": ["ESP32硬件", "ESP-IDF开发", "树莓派", "无线通信", "物联网云平台", "电子电路", "AI边缘应用", "AI技术前沿", "拒答无关", "多轮指代"]
+    "categories": [
+      "ESP32硬件",
+      "ESP-IDF开发",
+      "树莓派",
+      "无线通信",
+      "物联网云平台",
+      "电子电路",
+      "AI边缘应用",
+      "AI技术前沿",
+      "拒答无关",
+      "多轮指代"
+    ],
+    "stats": {
+      "total": 103,
+      "by_category": {
+        "AI技术前沿": 9,
+        "AI边缘应用": 8,
+        "ESP-IDF开发": 12,
+        "ESP32硬件": 12,
+        "多轮指代": 8,
+        "拒答无关": 10,
+        "无线通信": 12,
+        "树莓派": 12,
+        "物联网云平台": 8,
+        "电子电路": 12
+      }
+    }
   },
   "items": [
     {
@@ -13,10 +39,20 @@
       "question": "ESP32 芯片一共有多少个物理 GPIO 管脚？",
       "history": [],
       "standard_answer": "ESP32 芯片具有 34 个物理 GPIO 管脚（GPIO0 ~ GPIO19、GPIO21 ~ GPIO23、GPIO25 ~ GPIO27 和 GPIO32 ~ GPIO39）。每个管脚都可用作通用 IO，或连接一个内部外设信号。",
-      "law_refs": ["《GPIO & RTC GPIO》"],
-      "gold_docs": ["GPIO & RTC GPIO"],
+      "law_refs": [
+        "《GPIO & RTC GPIO》"
+      ],
+      "gold_docs": [
+        "GPIO & RTC GPIO"
+      ],
       "gold_chunks": [
-        {"doc": "GPIO & RTC GPIO", "chapter": "GPIO 汇总", "must_contain": ["34 个物理 GPIO 管脚"]}
+        {
+          "doc": "GPIO & RTC GPIO",
+          "chapter": "GPIO 汇总",
+          "must_contain": [
+            "34 个物理 GPIO 管脚"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -27,10 +63,21 @@
       "question": "在 ESP-IDF 中，一次性配置某个 GPIO 的输入输出模式、内部上拉/下拉电阻等参数，通常调用哪个函数？",
       "history": [],
       "standard_answer": "通常使用 gpio_config()。gpio_config() 是一个一体化的 API，可用于配置 I/O 模式、内部上拉/下拉电阻等管脚设置。",
-      "law_refs": ["《GPIO & RTC GPIO》"],
-      "gold_docs": ["GPIO & RTC GPIO"],
+      "law_refs": [
+        "《GPIO & RTC GPIO》"
+      ],
+      "gold_docs": [
+        "GPIO & RTC GPIO"
+      ],
       "gold_chunks": [
-        {"doc": "GPIO & RTC GPIO", "chapter": "IO 管脚配置", "must_contain": ["gpio_config", "一体化的 API"]}
+        {
+          "doc": "GPIO & RTC GPIO",
+          "chapter": "IO 管脚配置",
+          "must_contain": [
+            "gpio_config",
+            "一体化的 API"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -41,10 +88,20 @@
       "question": "如果想查看某个 IO 管脚当前的上下拉、输入输出使能等实时配置状态，应调用哪个功能？",
       "history": [],
       "standard_answer": "调用 gpio_dump_io_configuration()。GPIO 驱动提供了该函数，用来输出指定管脚的实时配置状态，包括上下拉、输入输出使能、管脚映射等。",
-      "law_refs": ["《GPIO & RTC GPIO》"],
-      "gold_docs": ["GPIO & RTC GPIO"],
+      "law_refs": [
+        "《GPIO & RTC GPIO》"
+      ],
+      "gold_docs": [
+        "GPIO & RTC GPIO"
+      ],
       "gold_chunks": [
-        {"doc": "GPIO & RTC GPIO", "chapter": "获取 IO 管脚实时配置状态", "must_contain": ["gpio_dump_io_configuration()"]}
+        {
+          "doc": "GPIO & RTC GPIO",
+          "chapter": "获取 IO 管脚实时配置状态",
+          "must_contain": [
+            "gpio_dump_io_configuration()"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -55,11 +112,27 @@
       "question": "ESP32 集成了几个 ADC？默认的 ADC 原始转换结果位宽是多少？",
       "history": [],
       "standard_answer": "ESP32 集成了 2 个 ADC，用于测量多路输入通道的模拟信号；默认情况下 ADC 原始转换结果的位宽为 12 位，即输入电压范围被划分为 4096 个离散电平。",
-      "law_refs": ["《模数转换器 (ADC)》"],
-      "gold_docs": ["模数转换器 (ADC)"],
+      "law_refs": [
+        "《模数转换器 (ADC)》"
+      ],
+      "gold_docs": [
+        "模数转换器 (ADC)"
+      ],
       "gold_chunks": [
-        {"doc": "模数转换器 (ADC)", "chapter": "概述", "must_contain": ["ESP32 集成了 2 个 ADC"]},
-        {"doc": "模数转换器 (ADC)", "chapter": "ADC 转换", "must_contain": ["位宽为 12 位"]}
+        {
+          "doc": "模数转换器 (ADC)",
+          "chapter": "概述",
+          "must_contain": [
+            "ESP32 集成了 2 个 ADC"
+          ]
+        },
+        {
+          "doc": "模数转换器 (ADC)",
+          "chapter": "ADC 转换",
+          "must_contain": [
+            "位宽为 12 位"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -70,10 +143,22 @@
       "question": "ESP32 的 ADC 支持哪些衰减等级？衰减等级越高意味着什么？",
       "history": [],
       "standard_answer": "支持的衰减等级包括 0 dB (k≈100%)、2.5 dB (k≈75%)、6 dB (k≈50%)、12 dB (k≈25%)。衰减等级越高，ADC 可测量的输入电压范围越大。",
-      "law_refs": ["《模数转换器 (ADC)》"],
-      "gold_docs": ["模数转换器 (ADC)"],
+      "law_refs": [
+        "《模数转换器 (ADC)》"
+      ],
+      "gold_docs": [
+        "模数转换器 (ADC)"
+      ],
       "gold_chunks": [
-        {"doc": "模数转换器 (ADC)", "chapter": "ADC 衰减", "must_contain": ["0 dB", "12 dB", "衰减等级越高，ADC 可测量的输入电压范围越大"]}
+        {
+          "doc": "模数转换器 (ADC)",
+          "chapter": "ADC 衰减",
+          "must_contain": [
+            "0 dB",
+            "12 dB",
+            "衰减等级越高，ADC 可测量的输入电压范围越大"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -84,10 +169,21 @@
       "question": "ESP32 时钟子系统中的“根时钟”作用是什么？请举例说明有哪些根时钟。",
       "history": [],
       "standard_answer": "根时钟会产生可靠的时钟信号，经各种门、复用器、分频器或倍频器传递，最终成为 CPU 内核、Wi-Fi、蓝牙、RTC 及外设等功能模块的时钟源；例如内部 8 MHz RC 振荡器 (RC_FAST)。",
-      "law_refs": ["《时钟树》"],
-      "gold_docs": ["时钟树"],
+      "law_refs": [
+        "《时钟树》"
+      ],
+      "gold_docs": [
+        "时钟树"
+      ],
       "gold_chunks": [
-        {"doc": "时钟树", "chapter": "根时钟", "must_contain": ["根时钟会产生可靠的时钟信号", "内部 8 MHz RC 振荡器"]}
+        {
+          "doc": "时钟树",
+          "chapter": "根时钟",
+          "must_contain": [
+            "根时钟会产生可靠的时钟信号",
+            "内部 8 MHz RC 振荡器"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -98,10 +194,21 @@
       "question": "ESP32 的电容式触摸传感器能否把芯片从低功耗状态唤醒？通过哪个函数配置？",
       "history": [],
       "standard_answer": "可以。ESP32 支持触摸传感器将芯片从 Light-sleep 或 Deep-sleep 状态中唤醒，可调用 touch_sensor_config_sleep_wakeup() 配置睡眠唤醒。",
-      "law_refs": ["《电容式触摸传感器》"],
-      "gold_docs": ["电容式触摸传感器"],
+      "law_refs": [
+        "《电容式触摸传感器》"
+      ],
+      "gold_docs": [
+        "电容式触摸传感器"
+      ],
       "gold_chunks": [
-        {"doc": "电容式触摸传感器", "chapter": "睡眠唤醒配置", "must_contain": ["ESP32 支持触摸传感器将芯片从 Light-sleep 或 Deep-sleep 状态中唤醒", "touch_sensor_config_sleep_wakeup()"]}
+        {
+          "doc": "电容式触摸传感器",
+          "chapter": "睡眠唤醒配置",
+          "must_contain": [
+            "ESP32 支持触摸传感器将芯片从 Light-sleep 或 Deep-sleep 状态中唤醒",
+            "touch_sensor_config_sleep_wakeup()"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -112,10 +219,20 @@
       "question": "ESP32 的 DAC 外设是否内置波形发生器？能产生什么波形？",
       "history": [],
       "standard_answer": "内置。DAC 外设中包含一个余弦波发生器，可以在通道上产生余弦波，用户可以配置余弦波的频率、振幅和相位。",
-      "law_refs": ["《数模转换器 (DAC)》"],
-      "gold_docs": ["数模转换器 (DAC)"],
+      "law_refs": [
+        "《数模转换器 (DAC)》"
+      ],
+      "gold_docs": [
+        "数模转换器 (DAC)"
+      ],
       "gold_chunks": [
-        {"doc": "数模转换器 (DAC)", "chapter": "余弦波输出（余弦模式）", "must_contain": ["DAC 外设中包含一个余弦波发生器"]}
+        {
+          "doc": "数模转换器 (DAC)",
+          "chapter": "余弦波输出（余弦模式）",
+          "must_contain": [
+            "DAC 外设中包含一个余弦波发生器"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -126,10 +243,21 @@
       "question": "ESP32-DevKitC V4 开发板有哪几种供电方式？能否同时连接？",
       "history": [],
       "standard_answer": "有三种供电方式：Micro USB 供电（默认）、5V/GND 管脚供电、3V3/GND 管脚供电。三种供电模式不可同时连接，否则可能会损坏开发板和/或电源。",
-      "law_refs": ["《ESP32-DevKitC V4》"],
-      "gold_docs": ["ESP32-DevKitC V4\uf0c1"],
+      "law_refs": [
+        "《ESP32-DevKitC V4》"
+      ],
+      "gold_docs": [
+        "ESP32-DevKitC V4"
+      ],
       "gold_chunks": [
-        {"doc": "ESP32-DevKitC V4\uf0c1", "chapter": "电源选项", "must_contain": ["Micro USB 供电（默认）", "不可同时连接"]}
+        {
+          "doc": "ESP32-DevKitC V4",
+          "chapter": "电源选项",
+          "must_contain": [
+            "Micro USB 供电（默认）",
+            "不可同时连接"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -140,10 +268,21 @@
       "question": "ESP32-DevKitC V4 是一款什么定位的开发板？",
       "history": [],
       "standard_answer": "ESP32-DevKitC V4 是乐鑫一款基于 ESP32 的小型开发板，板上模组的绝大部分管脚均已引出，开发人员可通过跳线连接多种外围器件，或将开发板插在面包板上使用。",
-      "law_refs": ["《ESP32-DevKitC V4》"],
-      "gold_docs": ["ESP32-DevKitC V4\uf0c1"],
+      "law_refs": [
+        "《ESP32-DevKitC V4》"
+      ],
+      "gold_docs": [
+        "ESP32-DevKitC V4"
+      ],
       "gold_chunks": [
-        {"doc": "ESP32-DevKitC V4\uf0c1", "chapter": "概述", "must_contain": ["ESP32-DevKitC V4 是", "小型开发板"]}
+        {
+          "doc": "ESP32-DevKitC V4",
+          "chapter": "概述",
+          "must_contain": [
+            "ESP32-DevKitC V4 是",
+            "小型开发板"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -154,10 +293,21 @@
       "question": "I2C 是一种什么样的通信协议？ESP32 有几个 I2C 控制器？",
       "history": [],
       "standard_answer": "I2C 是一种串行同步半双工通信协议，总线上可以同时挂载多个主机和从机，使用 SDA 和 SCL 两条双向开漏线并通过电阻上拉。ESP32 有 2 个 I2C 控制器（端口）。",
-      "law_refs": ["《I2C 接口》"],
-      "gold_docs": ["I2C 接口"],
+      "law_refs": [
+        "《I2C 接口》"
+      ],
+      "gold_docs": [
+        "I2C 接口"
+      ],
       "gold_chunks": [
-        {"doc": "I2C 接口", "chapter": "简介", "must_contain": ["I2C 是一种串行同步半双工通信协议", "ESP32 有 2 个 I2C 控制器"]}
+        {
+          "doc": "I2C 接口",
+          "chapter": "简介",
+          "must_contain": [
+            "I2C 是一种串行同步半双工通信协议",
+            "ESP32 有 2 个 I2C 控制器"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -168,10 +318,20 @@
       "question": "使用 ESP-IDF 的 I2C 主机时，若通信超时报 ESP_ERR_TIMEOUT，文档建议首先检查什么？",
       "history": [],
       "standard_answer": "文档建议首先检查上拉电阻：须将上拉电阻连接到 SCL 和 SDA 管脚；若暂无合适的电阻，也可将 flags.enable_internal_pullup 设为 true。",
-      "law_refs": ["《I2C 接口》"],
-      "gold_docs": ["I2C 接口"],
+      "law_refs": [
+        "《I2C 接口》"
+      ],
+      "gold_docs": [
+        "I2C 接口"
+      ],
       "gold_chunks": [
-        {"doc": "I2C 接口", "chapter": "I2C 主机控制器", "must_contain": ["须将上拉电阻连接到 SCL 和 SDA 管脚"]}
+        {
+          "doc": "I2C 接口",
+          "chapter": "I2C 主机控制器",
+          "must_contain": [
+            "须将上拉电阻连接到 SCL 和 SDA 管脚"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -182,10 +342,21 @@
       "question": "ESP32 芯片有几个 UART 控制器？每个控制器可以独立配置哪些参数？",
       "history": [],
       "standard_answer": "ESP32 芯片有 3 个 UART 控制器（端口）。每个 UART 控制器可以独立配置波特率、数据位长度、位顺序、停止位位数、奇偶校验位等参数。",
-      "law_refs": ["《通用异步接收器/发送器 (UART)》"],
-      "gold_docs": ["通用异步接收器/发送器 (UART)"],
+      "law_refs": [
+        "《通用异步接收器/发送器 (UART)》"
+      ],
+      "gold_docs": [
+        "通用异步接收器/发送器 (UART)"
+      ],
       "gold_chunks": [
-        {"doc": "通用异步接收器/发送器 (UART)", "chapter": "简介", "must_contain": ["ESP32 芯片有 3 个 UART 控制器", "每个 UART 控制器可以独立配置波特率"]}
+        {
+          "doc": "通用异步接收器/发送器 (UART)",
+          "chapter": "简介",
+          "must_contain": [
+            "ESP32 芯片有 3 个 UART 控制器",
+            "每个 UART 控制器可以独立配置波特率"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -196,10 +367,20 @@
       "question": "在 ESP-IDF 中安装 UART 驱动程序需要调用哪个函数？",
       "history": [],
       "standard_answer": "调用 uart_driver_install() 安装驱动程序，需指定 UART 控制器编号、Rx/Tx 环形缓冲区大小、事件队列大小、事件队列句柄指针以及分配中断的标志等参数。",
-      "law_refs": ["《通用异步接收器/发送器 (UART)》"],
-      "gold_docs": ["通用异步接收器/发送器 (UART)"],
+      "law_refs": [
+        "《通用异步接收器/发送器 (UART)》"
+      ],
+      "gold_docs": [
+        "通用异步接收器/发送器 (UART)"
+      ],
       "gold_chunks": [
-        {"doc": "通用异步接收器/发送器 (UART)", "chapter": "安装驱动程序", "must_contain": ["uart_driver_install()"]}
+        {
+          "doc": "通用异步接收器/发送器 (UART)",
+          "chapter": "安装驱动程序",
+          "must_contain": [
+            "uart_driver_install()"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -210,10 +391,21 @@
       "question": "配置 UART 的 Tx/Rx 等信号管脚应调用哪个函数？不想改变的管脚用什么宏？",
       "history": [],
       "standard_answer": "调用 uart_set_pin() 指定 Tx、Rx、RTS、CTS、DTR 和 DSR 信号对应的 GPIO 编号；如要保留当前分配的管脚编号，可传递宏 UART_PIN_NO_CHANGE。",
-      "law_refs": ["《通用异步接收器/发送器 (UART)》"],
-      "gold_docs": ["通用异步接收器/发送器 (UART)"],
+      "law_refs": [
+        "《通用异步接收器/发送器 (UART)》"
+      ],
+      "gold_docs": [
+        "通用异步接收器/发送器 (UART)"
+      ],
       "gold_chunks": [
-        {"doc": "通用异步接收器/发送器 (UART)", "chapter": "设置通信管脚", "must_contain": ["uart_set_pin()", "UART_PIN_NO_CHANGE"]}
+        {
+          "doc": "通用异步接收器/发送器 (UART)",
+          "chapter": "设置通信管脚",
+          "must_contain": [
+            "uart_set_pin()",
+            "UART_PIN_NO_CHANGE"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -224,10 +416,21 @@
       "question": "ESP32 的 LED PWM 控制器 (LEDC) 有几路通道？高速与低速模式有何区别？",
       "history": [],
       "standard_answer": "LEDC 有 8 路通道，可分为 8 路高速通道和 8 路低速通道。高速通道模式在硬件中实现，可以自动且无干扰地改变 PWM 占空比；低速通道模式下 PWM 占空比需要由软件中的驱动器改变。",
-      "law_refs": ["《LED PWM 控制器》"],
-      "gold_docs": ["LED PWM 控制器"],
+      "law_refs": [
+        "《LED PWM 控制器》"
+      ],
+      "gold_docs": [
+        "LED PWM 控制器"
+      ],
       "gold_chunks": [
-        {"doc": "LED PWM 控制器", "chapter": "概述", "must_contain": ["该控制器有 8 路通道", "低速通道模式下，PWM 占空比需要由软件中的驱动器改变"]}
+        {
+          "doc": "LED PWM 控制器",
+          "chapter": "概述",
+          "must_contain": [
+            "该控制器有 8 路通道",
+            "低速通道模式下，PWM 占空比需要由软件中的驱动器改变"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -238,10 +441,21 @@
       "question": "配置 LEDC 的 PWM 频率和占空比分辨率需要通过哪个函数？频率与分辨率有何关系？",
       "history": [],
       "standard_answer": "可调用 ledc_timer_config() 并传入 ledc_timer_config_t 结构体来设置定时器。频率和占空比分辨率相互关联：PWM 频率越高，占空比分辨率越低，反之亦然。",
-      "law_refs": ["《LED PWM 控制器》"],
-      "gold_docs": ["LED PWM 控制器"],
+      "law_refs": [
+        "《LED PWM 控制器》"
+      ],
+      "gold_docs": [
+        "LED PWM 控制器"
+      ],
       "gold_chunks": [
-        {"doc": "LED PWM 控制器", "chapter": "定时器配置", "must_contain": ["ledc_timer_config()", "PWM 频率越高，占空比分辨率越低"]}
+        {
+          "doc": "LED PWM 控制器",
+          "chapter": "定时器配置",
+          "must_contain": [
+            "ledc_timer_config()",
+            "PWM 频率越高，占空比分辨率越低"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -252,10 +466,20 @@
       "question": "当 LEDC 的 PWM 频率为 5 kHz 时，占空比分辨率最大可达多少位？",
       "history": [],
       "standard_answer": "最大可为 13 位。这意味着占空比可为 0 至 100% 之间的任意值，分辨率为 ~0.012%（2 ** 13 = 8192 个离散电平）。",
-      "law_refs": ["《LED PWM 控制器》"],
-      "gold_docs": ["LED PWM 控制器"],
+      "law_refs": [
+        "《LED PWM 控制器》"
+      ],
+      "gold_docs": [
+        "LED PWM 控制器"
+      ],
       "gold_chunks": [
-        {"doc": "LED PWM 控制器", "chapter": "频率和占空比分辨率支持范围", "must_contain": ["PWM 频率为 5 kHz 时，占空比分辨率最大可为 13 位"]}
+        {
+          "doc": "LED PWM 控制器",
+          "chapter": "频率和占空比分辨率支持范围",
+          "must_contain": [
+            "PWM 频率为 5 kHz 时，占空比分辨率最大可为 13 位"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -266,10 +490,21 @@
       "question": "在 ESP-IDF 中使用 FreeRTOS，用户的应用程序入口点是什么？是否应调用 vTaskStartScheduler()？",
       "history": [],
       "standard_answer": "用户必须定义 void app_main(void) 作为入口点。与原生 FreeRTOS 不同，在 ESP-IDF 中用户永远不应调用 vTaskStartScheduler() 和 vTaskEndScheduler()，ESP-IDF 会自动启动 FreeRTOS。",
-      "law_refs": ["《FreeRTOS 概述》"],
-      "gold_docs": ["FreeRTOS 概述"],
+      "law_refs": [
+        "《FreeRTOS 概述》"
+      ],
+      "gold_docs": [
+        "FreeRTOS 概述"
+      ],
       "gold_chunks": [
-        {"doc": "FreeRTOS 概述", "chapter": "应用程序入口点", "must_contain": ["void app_main(void)", "永远不应调用"]}
+        {
+          "doc": "FreeRTOS 概述",
+          "chapter": "应用程序入口点",
+          "must_contain": [
+            "void app_main(void)",
+            "永远不应调用"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -280,10 +515,21 @@
       "question": "使用 ESP-IDF 的 OTA 功能时，分区表必须包含什么分区？",
       "history": [],
       "standard_answer": "必须包含一个 OTA 数据分区（类型为 data，子类型为 ota）。工厂启动设置下，OTA 数据分区中应没有数据（所有字节擦写成 0xFF）。",
-      "law_refs": ["《空中升级 (OTA)》"],
-      "gold_docs": ["空中升级 (OTA)"],
+      "law_refs": [
+        "《空中升级 (OTA)》"
+      ],
+      "gold_docs": [
+        "空中升级 (OTA)"
+      ],
       "gold_chunks": [
-        {"doc": "空中升级 (OTA)", "chapter": "OTA 数据分区", "must_contain": ["必须包含一个 OTA 数据分区", "ota"]}
+        {
+          "doc": "空中升级 (OTA)",
+          "chapter": "OTA 数据分区",
+          "must_contain": [
+            "必须包含一个 OTA 数据分区",
+            "ota"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -294,10 +540,20 @@
       "question": "ESP-IDF 的 OTA 防回滚机制是做什么的？如何启用？",
       "history": [],
       "standard_answer": "防回滚机制可以防止回滚到安全版本号低于芯片 eFuse 中烧录程序的应用程序版本；通过设置 CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK 启用该机制。",
-      "law_refs": ["《空中升级 (OTA)》"],
-      "gold_docs": ["空中升级 (OTA)"],
+      "law_refs": [
+        "《空中升级 (OTA)》"
+      ],
+      "gold_docs": [
+        "空中升级 (OTA)"
+      ],
       "gold_chunks": [
-        {"doc": "空中升级 (OTA)", "chapter": "防回滚", "must_contain": ["防回滚机制可以防止回滚到安全版本号低于芯片 eFuse 中烧录程序的应用程序版本"]}
+        {
+          "doc": "空中升级 (OTA)",
+          "chapter": "防回滚",
+          "must_contain": [
+            "防回滚机制可以防止回滚到安全版本号低于芯片 eFuse 中烧录程序的应用程序版本"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -308,10 +564,20 @@
       "question": "在 ESP-IDF 中初始化 ESP-WIFI-MESH，需要调用哪个函数？",
       "history": [],
       "standard_answer": "调用 esp_mesh_init() 初始化 ESP-WIFI-MESH，并注册 mesh 事件处理程序（如 esp_event_handler_register(MESH_EVENT, ...)）。",
-      "law_refs": ["《ESP-WIFI-MESH 编程指南》"],
-      "gold_docs": ["ESP-WIFI-MESH 编程指南"],
+      "law_refs": [
+        "《ESP-WIFI-MESH 编程指南》"
+      ],
+      "gold_docs": [
+        "ESP-WIFI-MESH 编程指南"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-WIFI-MESH 编程指南", "chapter": "初始化 Mesh", "must_contain": ["esp_mesh_init()"]}
+        {
+          "doc": "ESP-WIFI-MESH 编程指南",
+          "chapter": "初始化 Mesh",
+          "must_contain": [
+            "esp_mesh_init()"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -322,10 +588,21 @@
       "question": "ESP-WIFI-MESH 通过哪个函数和结构体配置网络参数？",
       "history": [],
       "standard_answer": "可通过 esp_mesh_set_config() 配置，并使用 mesh_cfg_t 结构体传递参数，如信道 (Channel，1 到 14)、Mesh ID、路由器配置等。",
-      "law_refs": ["《ESP-WIFI-MESH 编程指南》"],
-      "gold_docs": ["ESP-WIFI-MESH 编程指南"],
+      "law_refs": [
+        "《ESP-WIFI-MESH 编程指南》"
+      ],
+      "gold_docs": [
+        "ESP-WIFI-MESH 编程指南"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-WIFI-MESH 编程指南", "chapter": "配置 ESP-WIFI-MESH 网络", "must_contain": ["esp_mesh_set_config()", "mesh_cfg_t"]}
+        {
+          "doc": "ESP-WIFI-MESH 编程指南",
+          "chapter": "配置 ESP-WIFI-MESH 网络",
+          "must_contain": [
+            "esp_mesh_set_config()",
+            "mesh_cfg_t"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -336,10 +613,20 @@
       "question": "在运行 ESP-WIFI-MESH 期间，如果应用程序想手动调用 Wi-Fi API 扫描邻近 AP，需要先做什么？",
       "history": [],
       "standard_answer": "必须先禁用自组网。否则 ESP-WIFI-MESH 软件栈可能会同时调用 Wi-Fi API，进而影响应用程序的正常调用。",
-      "law_refs": ["《ESP-WIFI-MESH 编程指南》"],
-      "gold_docs": ["ESP-WIFI-MESH 编程指南"],
+      "law_refs": [
+        "《ESP-WIFI-MESH 编程指南》"
+      ],
+      "gold_docs": [
+        "ESP-WIFI-MESH 编程指南"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-WIFI-MESH 编程指南", "chapter": "调用 Wi-Fi API", "must_contain": ["必须先禁用自组网"]}
+        {
+          "doc": "ESP-WIFI-MESH 编程指南",
+          "chapter": "调用 Wi-Fi API",
+          "must_contain": [
+            "必须先禁用自组网"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -350,10 +637,20 @@
       "question": "在 ESP-WIFI-MESH 中，为什么每个节点都必须初始化 LwIP 软件栈？",
       "history": [],
       "standard_answer": "由于自动根节点选择机制的存在，每个节点都有可能成为根节点，而 LwIP 层仅在根节点与外部 IP 网络收发数据时使用，因此可成为根节点的每个节点仍必须初始化 LwIP 软件栈（调用 esp_netif_init()）。",
-      "law_refs": ["《ESP-WIFI-MESH 编程指南》"],
-      "gold_docs": ["ESP-WIFI-MESH 编程指南"],
+      "law_refs": [
+        "《ESP-WIFI-MESH 编程指南》"
+      ],
+      "gold_docs": [
+        "ESP-WIFI-MESH 编程指南"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-WIFI-MESH 编程指南", "chapter": "LwIP & ESP-WIFI-MESH", "must_contain": ["每个节点仍必须初始化 LwIP 软件栈"]}
+        {
+          "doc": "ESP-WIFI-MESH 编程指南",
+          "chapter": "LwIP & ESP-WIFI-MESH",
+          "must_contain": [
+            "每个节点仍必须初始化 LwIP 软件栈"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -364,10 +661,21 @@
       "question": "ESP-NOW 是什么？它用哪种方法保护数据帧的安全？",
       "history": [],
       "standard_answer": "ESP-NOW 是乐鑫定义的一种无连接 Wi-Fi 通信协议，数据被封装在供应商的动作帧中传输；CTR 与 CBC-MAC 协议 (CCMP) 可用来保护动作帧的安全，广泛应用于智能照明、远程控制、传感器等领域。",
-      "law_refs": ["《ESP-NOW》"],
-      "gold_docs": ["ESP-NOW"],
+      "law_refs": [
+        "《ESP-NOW》"
+      ],
+      "gold_docs": [
+        "ESP-NOW"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-NOW", "chapter": "概述", "must_contain": ["无连接 Wi-Fi 通信协议", "CCMP"]}
+        {
+          "doc": "ESP-NOW",
+          "chapter": "概述",
+          "must_contain": [
+            "无连接 Wi-Fi 通信协议",
+            "CCMP"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -378,10 +686,22 @@
       "question": "ESP-NOW 的默认比特率是多少？v2.0 与 v1.0 设备支持的最大数据包长度分别是多少字节？",
       "history": [],
       "standard_answer": "ESP-NOW 默认比特率为 1 Mbps；v2.0 设备支持的最大数据包长度为 1470 字节，v1.0 设备支持的最大数据包长度为 250 字节。v2.0 设备可以接收来自 v2.0 和 v1.0 设备的数据包。",
-      "law_refs": ["《ESP-NOW》"],
-      "gold_docs": ["ESP-NOW"],
+      "law_refs": [
+        "《ESP-NOW》"
+      ],
+      "gold_docs": [
+        "ESP-NOW"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-NOW", "chapter": "帧格式", "must_contain": ["1 Mbps", "1470", "250"]}
+        {
+          "doc": "ESP-NOW",
+          "chapter": "帧格式",
+          "must_contain": [
+            "1 Mbps",
+            "1470",
+            "250"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -392,10 +712,20 @@
       "question": "向其他设备发送 ESP-NOW 数据之前，需要先调用哪个函数把对方加入配对列表？",
       "history": [],
       "standard_answer": "需先调用 esp_now_add_peer() 将对方加入配对设备列表；若启用了加密，则必须设置 LMK。ESP-NOW 数据可以从 Station 或 SoftAP 接口发送。",
-      "law_refs": ["《ESP-NOW》"],
-      "gold_docs": ["ESP-NOW"],
+      "law_refs": [
+        "《ESP-NOW》"
+      ],
+      "gold_docs": [
+        "ESP-NOW"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-NOW", "chapter": "添加配对设备", "must_contain": ["esp_now_add_peer()"]}
+        {
+          "doc": "ESP-NOW",
+          "chapter": "添加配对设备",
+          "must_contain": [
+            "esp_now_add_peer()"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -406,10 +736,21 @@
       "question": "ESP-NOW 通过哪两个函数完成初始化和反初始化？数据能否在 Wi-Fi 启动前传输？",
       "history": [],
       "standard_answer": "调用 esp_now_init() 初始化、esp_now_deinit() 反初始化。ESP-NOW 数据必须在 Wi-Fi 启动后传输，因此建议在初始化 ESP-NOW 之前启动 Wi-Fi。",
-      "law_refs": ["《ESP-NOW》"],
-      "gold_docs": ["ESP-NOW"],
+      "law_refs": [
+        "《ESP-NOW》"
+      ],
+      "gold_docs": [
+        "ESP-NOW"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-NOW", "chapter": "初始化和反初始化", "must_contain": ["esp_now_init()", "esp_now_deinit()"]}
+        {
+          "doc": "ESP-NOW",
+          "chapter": "初始化和反初始化",
+          "must_contain": [
+            "esp_now_init()",
+            "esp_now_deinit()"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -420,10 +761,22 @@
       "question": "ESP32 的 Wi-Fi 库支持哪几种工作模式？",
       "history": [],
       "standard_answer": "Wi-Fi 库支持 station 模式（STA 模式或 Wi-Fi 客户端模式）、AP 模式（Soft-AP 模式或接入点模式）以及 station/AP 共存模式。",
-      "law_refs": ["《Wi-Fi 库》"],
-      "gold_docs": ["Wi-Fi 库"],
+      "law_refs": [
+        "《Wi-Fi 库》"
+      ],
+      "gold_docs": [
+        "Wi-Fi 库"
+      ],
       "gold_chunks": [
-        {"doc": "Wi-Fi 库", "chapter": "概述", "must_contain": ["station 模式", "AP 模式", "station/AP 共存模式"]}
+        {
+          "doc": "Wi-Fi 库",
+          "chapter": "概述",
+          "must_contain": [
+            "station 模式",
+            "AP 模式",
+            "station/AP 共存模式"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -434,10 +787,21 @@
       "question": "ESP-MQTT 是什么？当前支持哪个版本的 MQTT 协议？",
       "history": [],
       "standard_answer": "ESP-MQTT 是 MQTT 协议客户端的实现，属于轻量级发布/订阅消息协议，现已支持 MQTT v5.0。",
-      "law_refs": ["《ESP-MQTT》"],
-      "gold_docs": ["ESP-MQTT"],
+      "law_refs": [
+        "《ESP-MQTT》"
+      ],
+      "gold_docs": [
+        "ESP-MQTT"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-MQTT", "chapter": "概述", "must_contain": ["轻量级发布/订阅消息协议", "MQTT v5.0"]}
+        {
+          "doc": "ESP-MQTT",
+          "chapter": "概述",
+          "must_contain": [
+            "轻量级发布/订阅消息协议",
+            "MQTT v5.0"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -448,10 +812,20 @@
       "question": "从哪个 ESP-IDF 版本起，ESP-MQTT 组件被移出了 ESP-IDF 主仓库？",
       "history": [],
       "standard_answer": "自 ESP-IDF v6.0 起，ESP-MQTT 组件已从 ESP-IDF 中移至独立仓库 esp-mqtt。",
-      "law_refs": ["《ESP-MQTT》"],
-      "gold_docs": ["ESP-MQTT"],
+      "law_refs": [
+        "《ESP-MQTT》"
+      ],
+      "gold_docs": [
+        "ESP-MQTT"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-MQTT", "chapter": "概述", "must_contain": ["自 ESP-IDF v6.0 起"]}
+        {
+          "doc": "ESP-MQTT",
+          "chapter": "概述",
+          "must_contain": [
+            "自 ESP-IDF v6.0 起"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -462,10 +836,20 @@
       "question": "ESP-Modbus 支持基于哪些接口网络的 Modbus 通信？",
       "history": [],
       "standard_answer": "乐鑫 ESP-Modbus 库 (esp-modbus) 支持基于 RS485、Wi-Fi 和以太网接口网络的 Modbus 通信。",
-      "law_refs": ["《ESP-Modbus》"],
-      "gold_docs": ["ESP-Modbus"],
+      "law_refs": [
+        "《ESP-Modbus》"
+      ],
+      "gold_docs": [
+        "ESP-Modbus"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-Modbus", "chapter": "ESP-Modbus", "must_contain": ["支持基于 RS485、Wi-Fi 和以太网接口网络的 Modbus 通信"]}
+        {
+          "doc": "ESP-Modbus",
+          "chapter": "ESP-Modbus",
+          "must_contain": [
+            "支持基于 RS485、Wi-Fi 和以太网接口网络的 Modbus 通信"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -476,10 +860,20 @@
       "question": "ESP RainMaker 在 2023 年新增了什么能力，可帮助客户构建自己的 Matter 生态？",
       "history": [],
       "standard_answer": "ESP RainMaker 现已支持 Matter Fabric，赋能客户轻松构建自己的 Matter 生态系统，是业内首个可完全自主品牌的 Matter 生态和应用方案。",
-      "law_refs": ["《乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技》"],
-      "gold_docs": ["乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技"],
+      "law_refs": [
+        "《乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技》"
+      ],
+      "gold_docs": [
+        "乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技"
+      ],
       "gold_chunks": [
-        {"doc": "乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技", "chapter": "中国，上海 2023年8月9日", "must_contain": ["Matter Fabric"]}
+        {
+          "doc": "乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技",
+          "chapter": "中国，上海 2023年8月9日",
+          "must_contain": [
+            "Matter Fabric"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -490,10 +884,20 @@
       "question": "ESP RainMaker 私有物联网云的云后端采用什么架构？",
       "history": [],
       "standard_answer": "ESP RainMaker 是乐鑫的 AIoT 云平台，支持客户自主部署私有物联网云，从而全面掌握数据所有权和管理权；其云后端采用 AWS 无服务器架构，并拥有开源的 iOS 和 Android 移动端 APP。",
-      "law_refs": ["《乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技》"],
-      "gold_docs": ["乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技"],
+      "law_refs": [
+        "《乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技》"
+      ],
+      "gold_docs": [
+        "乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技"
+      ],
       "gold_chunks": [
-        {"doc": "乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技", "chapter": "中国，上海 2023年8月9日", "must_contain": ["AWS 无服务器架构"]}
+        {
+          "doc": "乐鑫首创｜使用 ESP RainMaker® 私有云定制 Matter 生态 | 乐鑫科技",
+          "chapter": "中国，上海 2023年8月9日",
+          "must_contain": [
+            "AWS 无服务器架构"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -504,10 +908,21 @@
       "question": "ESP RainMaker Neo 是什么？它把哪一段技术栈开源？",
       "history": [],
       "standard_answer": "ESP RainMaker Neo 是 ESP RainMaker 的全新开源实现，是一套覆盖设备、云端和手机应用 (Device-to-Cloud-to-Phone) 的完整开源 IoT 平台，基于 AWS 无服务器架构。",
-      "law_refs": ["《乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技》"],
-      "gold_docs": ["乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技"],
+      "law_refs": [
+        "《乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技》"
+      ],
+      "gold_docs": [
+        "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技"
+      ],
       "gold_chunks": [
-        {"doc": "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技", "chapter": "中国，上海 2026年8月5日", "must_contain": ["Device-to-Cloud-to-Phone", "开源 IoT 平台"]}
+        {
+          "doc": "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技",
+          "chapter": "中国，上海 2026年8月5日",
+          "must_contain": [
+            "Device-to-Cloud-to-Phone",
+            "开源 IoT 平台"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -518,10 +933,20 @@
       "question": "ESP RainMaker Neo 采用什么开源许可证发布？",
       "history": [],
       "standard_answer": "ESP RainMaker Neo 采用 Apache License 2.0 开源许可证进行发布，更多源代码、部署文档及开发资料将陆续开放。",
-      "law_refs": ["《乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技》"],
-      "gold_docs": ["乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技"],
+      "law_refs": [
+        "《乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技》"
+      ],
+      "gold_docs": [
+        "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技"
+      ],
       "gold_chunks": [
-        {"doc": "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技", "chapter": "立即体验 ESP RainMaker Neo", "must_contain": ["Apache License 2.0"]}
+        {
+          "doc": "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技",
+          "chapter": "立即体验 ESP RainMaker Neo",
+          "must_contain": [
+            "Apache License 2.0"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -532,10 +957,21 @@
       "question": "ESP RainMaker Neo 与传统 PaaS/SaaS 式 IoT 云平台有何不同？",
       "history": [],
       "standard_answer": "不同于传统 PaaS（平台即服务）和 SaaS（软件即服务）式的 IoT 云平台，ESP RainMaker Neo 将完整技术栈全部开放，用户不仅能够拥有平台的自主控制权，还可以根据业务需求深度定制，真正实现从设备到云端再到移动应用的全链路自主开发。",
-      "law_refs": ["《乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技》"],
-      "gold_docs": ["乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技"],
+      "law_refs": [
+        "《乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技》"
+      ],
+      "gold_docs": [
+        "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技"
+      ],
       "gold_chunks": [
-        {"doc": "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技", "chapter": "开放完整技术栈，支持灵活部署", "must_contain": ["不同于传统 PaaS（平台即服务）和 SaaS（软件即服务）式的 IoT 云平台", "全链路自主开发"]}
+        {
+          "doc": "乐鑫发布 ESP RainMaker Neo：全栈开源 IoT 平台 | 乐鑫科技",
+          "chapter": "开放完整技术栈，支持灵活部署",
+          "must_contain": [
+            "不同于传统 PaaS（平台即服务）和 SaaS（软件即服务）式的 IoT 云平台",
+            "全链路自主开发"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -546,10 +982,21 @@
       "question": "射频前端芯片是无线通信系统的什么组件？通常集成了哪些关键模块？",
       "history": [],
       "standard_answer": "射频前端芯片是无线通信系统的核心组件，连接天线和基带处理单元，主要负责处理收发过程中的高频模拟信号；它集成了功率放大器（PA）、低噪声放大器（LNA）、射频开关、滤波器和双工器等关键模块。",
-      "law_refs": ["《2026年全球射频前端芯片产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"],
-      "gold_docs": ["2026年全球射频前端芯片产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"],
+      "law_refs": [
+        "《2026年全球射频前端芯片产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "2026年全球射频前端芯片产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
       "gold_chunks": [
-        {"doc": "2026年全球射频前端芯片产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!", "must_contain": ["射频前端芯片是无线通信系统的核心组件", "功率放大器（PA）", "低噪声放大器（LNA）"]}
+        {
+          "doc": "2026年全球射频前端芯片产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "射频前端芯片是无线通信系统的核心组件",
+            "功率放大器（PA）",
+            "低噪声放大器（LNA）"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -560,10 +1007,20 @@
       "question": "卫星通信中，低轨道卫星 (LEO) 的轨道高度大约是多少？相比中/高轨有什么优势？",
       "history": [],
       "standard_answer": "低轨道卫星（LEO）距离地球表面约 160 至 2000 公里，轨道高度相对较低，因此传输延迟较短。",
-      "law_refs": ["《2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"],
-      "gold_docs": ["2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"],
+      "law_refs": [
+        "《2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
       "gold_chunks": [
-        {"doc": "2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!", "must_contain": ["低轨道卫星（LEO）距离地球表面约160至2000公里", "传输延迟较短"]}
+        {
+          "doc": "2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "低轨道卫星（LEO）距离地球表面约160至2000公里",
+            "传输延迟较短"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -574,10 +1031,20 @@
       "question": "卫星通信相控阵天线由什么组成？它如何实现天线波束的快速扫描？",
       "history": [],
       "standard_answer": "卫星通信相控阵天线由多个天线单元组成；通过改变每个天线单元通道发射信号的相位和幅度，并改变相控阵天线的孔径照射功能，可以实现天线波束的快速扫描。",
-      "law_refs": ["《2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"],
-      "gold_docs": ["2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"],
+      "law_refs": [
+        "《2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
       "gold_chunks": [
-        {"doc": "2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!", "must_contain": ["相控阵天线由多个天线单元组成", "改变每个天线单元通道发射信号的相位和幅度"]}
+        {
+          "doc": "2026年全球卫星通信相控阵天线产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "相控阵天线由多个天线单元组成",
+            "改变每个天线单元通道发射信号的相位和幅度"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -588,10 +1055,20 @@
       "question": "LoRa 常应用于哪些场景？它适合什么样的数据传输需求？",
       "history": [],
       "standard_answer": "LoRa 常用于智慧农业、工业监测、智能抄表、油田数据采集等场景，适合“远距离、低功耗、少量数据”的传输需求。",
-      "law_refs": ["《LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"],
-      "gold_docs": ["LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"],
+      "law_refs": [
+        "《LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
       "gold_chunks": [
-        {"doc": "LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!", "must_contain": ["远距离、低功耗", "智慧农业"]}
+        {
+          "doc": "LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "远距离、低功耗",
+            "智慧农业"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -602,10 +1079,19 @@
       "question": "LoRa 的全称是什么？",
       "history": [],
       "standard_answer": "LoRa 全称 Long Range，是一种面向远距离、低功耗场景的无线通信技术。",
-      "law_refs": ["《LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"],
-      "gold_docs": ["LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"],
+      "law_refs": [
+        "《LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
       "gold_chunks": [
-        {"doc": "LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!", "must_contain": ["LoRa全称Long"]}
+        {
+          "doc": "LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "LoRa全称Long"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -616,10 +1102,20 @@
       "question": "什么是睡眠监测？它主要覆盖哪些产品形态？",
       "history": [],
       "standard_answer": "睡眠监测是指通过多种传感与数据分析技术，对个体睡眠过程中的睡眠时长、睡眠结构、呼吸状态及夜间生命体征进行连续采集、分析与事件识别的综合解决方案；产品形态主要包括可穿戴设备（手环、手表、戒指等）、非接触式床旁设备以及医用级睡眠监测与筛查设备。",
-      "law_refs": ["《2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"],
-      "gold_docs": ["2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"],
+      "law_refs": [
+        "《2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
       "gold_chunks": [
-        {"doc": "2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!", "must_contain": ["睡眠监测是指通过多种传感与数据分析技术", "可穿戴设备（手环、手表、戒指等）"]}
+        {
+          "doc": "2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "睡眠监测是指通过多种传感与数据分析技术",
+            "可穿戴设备（手环、手表、戒指等）"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -630,10 +1126,20 @@
       "question": "ESP-WHO 是什么平台？提供哪些示例？",
       "history": [],
       "standard_answer": "ESP-WHO 是基于乐鑫芯片的图像处理开发平台，提供了人脸检测、人脸识别、行人检测、二维码识别等示例，并基于 ESP-DL 开发。",
-      "law_refs": ["《ESP-WHO [[English]](./README.md)》"],
-      "gold_docs": ["ESP-WHO [[English]](./README.md)"],
+      "law_refs": [
+        "《ESP-WHO [[English]](./README.md)》"
+      ],
+      "gold_docs": [
+        "ESP-WHO [[English]](./README.md)"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-WHO [[English]](./README.md)", "chapter": "概述", "must_contain": ["ESP-WHO 提供了人脸检测、人脸识别、行人检测、二维码识别等示例"]}
+        {
+          "doc": "ESP-WHO [[English]](./README.md)",
+          "chapter": "概述",
+          "must_contain": [
+            "ESP-WHO 提供了人脸检测、人脸识别、行人检测、二维码识别等示例"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -644,10 +1150,20 @@
       "question": "ESP-WHO 重构后新增了对哪款芯片的支持？",
       "history": [],
       "standard_answer": "ESP-WHO 仓库已完全重构，适配新版 ESP-DL，并新增支持 ESP32-P4 芯片；此外摄像头和深度学习模型现在异步执行以实现更高帧率，并添加了 lvgl 支持。",
-      "law_refs": ["《ESP-WHO [[English]](./README.md)》"],
-      "gold_docs": ["ESP-WHO [[English]](./README.md)"],
+      "law_refs": [
+        "《ESP-WHO [[English]](./README.md)》"
+      ],
+      "gold_docs": [
+        "ESP-WHO [[English]](./README.md)"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-WHO [[English]](./README.md)", "chapter": "新功能", "must_contain": ["ESP32-P4"]}
+        {
+          "doc": "ESP-WHO [[English]](./README.md)",
+          "chapter": "新功能",
+          "must_contain": [
+            "ESP32-P4"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -658,10 +1174,21 @@
       "question": "ESP-Skainet 中负责唤醒词识别的模型是什么？目前免费开放了哪些唤醒词？",
       "history": [],
       "standard_answer": "唤醒词识别模型是 WakeNet，专为用户提供高性能、低资源消耗的唤醒词检测算法。目前乐鑫免费开放“Hi，乐鑫”“你好小智”“你好小鑫”“Hi，ESP”唤醒词。",
-      "law_refs": ["《ESP-Skainet [[English]](./README.md)》"],
-      "gold_docs": ["ESP-Skainet [[English]](./README.md)"],
+      "law_refs": [
+        "《ESP-Skainet [[English]](./README.md)》"
+      ],
+      "gold_docs": [
+        "ESP-Skainet [[English]](./README.md)"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-Skainet [[English]](./README.md)", "chapter": "唤醒词识别", "must_contain": ["WakeNet", "Hi，乐鑫"]}
+        {
+          "doc": "ESP-Skainet [[English]](./README.md)",
+          "chapter": "唤醒词识别",
+          "must_contain": [
+            "WakeNet",
+            "Hi，乐鑫"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -672,10 +1199,21 @@
       "question": "ESP-Skainet 的命令词识别模型是什么？最多支持多少个命令词？",
       "history": [],
       "standard_answer": "命令词识别模型是 MultiNet，专为提供灵活的离线语音命令词识别而设计，用户可自定义语音命令而无需重新训练模型；目前 MultiNet 支持最多 200 个中英文命令词。",
-      "law_refs": ["《ESP-Skainet [[English]](./README.md)》"],
-      "gold_docs": ["ESP-Skainet [[English]](./README.md)"],
+      "law_refs": [
+        "《ESP-Skainet [[English]](./README.md)》"
+      ],
+      "gold_docs": [
+        "ESP-Skainet [[English]](./README.md)"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-Skainet [[English]](./README.md)", "chapter": "语音命令词识别", "must_contain": ["MultiNet", "200 个中英文命令词"]}
+        {
+          "doc": "ESP-Skainet [[English]](./README.md)",
+          "chapter": "语音命令词识别",
+          "must_contain": [
+            "MultiNet",
+            "200 个中英文命令词"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -686,10 +1224,23 @@
       "question": "ESP-Skainet 的声学前端 (AFE) 集成了哪些算法？",
       "history": [],
       "standard_answer": "声学前端 AFE 集成了回声消除（AEC）、语音活动检测（VAD）、盲源分离（BSS）和噪声抑制（NS）等算法；其双麦克风声学前端已通过 Amazon Alexa Built-in 设备的软件音频前端解决方案。",
-      "law_refs": ["《ESP-Skainet [[English]](./README.md)》"],
-      "gold_docs": ["ESP-Skainet [[English]](./README.md)"],
+      "law_refs": [
+        "《ESP-Skainet [[English]](./README.md)》"
+      ],
+      "gold_docs": [
+        "ESP-Skainet [[English]](./README.md)"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-Skainet [[English]](./README.md)", "chapter": "声学前端算法", "must_contain": ["回声消除（AEC）", "语音活动检测（VAD）", "盲源分离（BSS）", "噪声抑制（NS）"]}
+        {
+          "doc": "ESP-Skainet [[English]](./README.md)",
+          "chapter": "声学前端算法",
+          "must_contain": [
+            "回声消除（AEC）",
+            "语音活动检测（VAD）",
+            "盲源分离（BSS）",
+            "噪声抑制（NS）"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -700,10 +1251,20 @@
       "question": "运行 ESP-Skainet 需要什么样的硬件？",
       "history": [],
       "standard_answer": "运行 ESP-Skainet 需要一块集成了音频输入模块的 ESP32 或 ESP32-S3 开发板。",
-      "law_refs": ["《ESP-Skainet [[English]](./README.md)》"],
-      "gold_docs": ["ESP-Skainet [[English]](./README.md)"],
+      "law_refs": [
+        "《ESP-Skainet [[English]](./README.md)》"
+      ],
+      "gold_docs": [
+        "ESP-Skainet [[English]](./README.md)"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-Skainet [[English]](./README.md)", "chapter": "硬件准备", "must_contain": ["您需要一块集成了音频输入模块的 ESP32 或 ESP32-S3 开发板"]}
+        {
+          "doc": "ESP-Skainet [[English]](./README.md)",
+          "chapter": "硬件准备",
+          "must_contain": [
+            "您需要一块集成了音频输入模块的 ESP32 或 ESP32-S3 开发板"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -714,10 +1275,20 @@
       "question": "GPT-6 Astra 发布时，在 ARC-AGI-3 上取得了什么成绩？",
       "history": [],
       "standard_answer": "整场发布中最受关注的是 GPT-6 Astra 在 ARC-AGI-3 上取得 99.9% 的成绩。",
-      "law_refs": ["《GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代》"],
-      "gold_docs": ["GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代"],
+      "law_refs": [
+        "《GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代》"
+      ],
+      "gold_docs": [
+        "GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代"
+      ],
       "gold_chunks": [
-        {"doc": "GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代", "must_contain": ["ARC AGI 3", "99.9%"]}
+        {
+          "doc": "GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代",
+          "must_contain": [
+            "ARC AGI 3",
+            "99.9%"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -728,10 +1299,19 @@
       "question": "GPT-6 Astra 发布时，OpenAI 总裁 Brockman 如何表态？",
       "history": [],
       "standard_answer": "OpenAI 总裁 Greg Brockman 表示“欢迎来到 AGI 时代”；Sam Altman 则称他们花了额外时间确保安全和对齐标准。",
-      "law_refs": ["《GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代》"],
-      "gold_docs": ["GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代"],
+      "law_refs": [
+        "《GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代》"
+      ],
+      "gold_docs": [
+        "GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代"
+      ],
       "gold_chunks": [
-        {"doc": "GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代", "must_contain": ["欢迎来到 AGI 时代"]}
+        {
+          "doc": "GPT-6 Astra 发布，OpenAI 总裁 Brockman 说欢迎来到 AGI 时代",
+          "must_contain": [
+            "欢迎来到 AGI 时代"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -742,10 +1322,20 @@
       "question": "派早报中提到 Anthropic 做了什么升级？还涉及哪项微软业务调整？",
       "history": [],
       "standard_answer": "派早报提到 Anthropic 升级 Claude Code 及 Cowork，以及微软调整 Xbox Cloud Gaming 商业模式等。",
-      "law_refs": ["《派早报：OpenAI 发布 GPT-6 Astra 模型、Meta 发布 Muse Spark 1.3 模型等》"],
-      "gold_docs": ["派早报：OpenAI 发布 GPT-6 Astra 模型、Meta 发布 Muse Spark 1.3 模型等"],
+      "law_refs": [
+        "《派早报：OpenAI 发布 GPT-6 Astra 模型、Meta 发布 Muse Spark 1.3 模型等》"
+      ],
+      "gold_docs": [
+        "派早报：OpenAI 发布 GPT-6 Astra 模型、Meta 发布 Muse Spark 1.3 模型等"
+      ],
       "gold_chunks": [
-        {"doc": "派早报：OpenAI 发布 GPT-6 Astra 模型、Meta 发布 Muse Spark 1.3 模型等", "must_contain": ["Anthropic 升级 Claude Code", "Xbox Cloud Gaming"]}
+        {
+          "doc": "派早报：OpenAI 发布 GPT-6 Astra 模型、Meta 发布 Muse Spark 1.3 模型等",
+          "must_contain": [
+            "Anthropic 升级 Claude Code",
+            "Xbox Cloud Gaming"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -756,10 +1346,21 @@
       "question": "Open Flow 是什么平台？由谁开源、提供哪些能力？",
       "history": [],
       "standard_answer": "Open Flow 是 OOMOL Lab 开源的面向 AI Agent 的工作流自动化平台，提供可视化 Workbench、命令行接口和自托管运行时，让 Agent 直接参与完整的工作流生命周期。",
-      "law_refs": ["《Open Flow 开源：面向 AI Agent 的工作流自动化平台》"],
-      "gold_docs": ["Open Flow 开源：面向 AI Agent 的工作流自动化平台"],
+      "law_refs": [
+        "《Open Flow 开源：面向 AI Agent 的工作流自动化平台》"
+      ],
+      "gold_docs": [
+        "Open Flow 开源：面向 AI Agent 的工作流自动化平台"
+      ],
       "gold_chunks": [
-        {"doc": "Open Flow 开源：面向 AI Agent 的工作流自动化平台", "must_contain": ["OOMOL Lab", "面向 AI Agent 的工作流自动化平台", "可视化 Workbench"]}
+        {
+          "doc": "Open Flow 开源：面向 AI Agent 的工作流自动化平台",
+          "must_contain": [
+            "OOMOL Lab",
+            "面向 AI Agent 的工作流自动化平台",
+            "可视化 Workbench"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -770,10 +1371,20 @@
       "question": "Zed 创始人 Nathan Sobo 的博客文章提出了什么观点？",
       "history": [],
       "standard_answer": "Zed 创始人 Nathan Sobo 发表博客《Xanadu 一直在等 Agent》，认为 Ted Nelson 在 1960 年代提出、几十年未能真正产品化的超文本愿景 Xanadu，如今终于等到了 AI Agent。",
-      "law_refs": ["《Zed 创始人：Xanadu 等了六十年，终于等到了 AI Agent》"],
-      "gold_docs": ["Zed 创始人：Xanadu 等了六十年，终于等到了 AI Agent"],
+      "law_refs": [
+        "《Zed 创始人：Xanadu 等了六十年，终于等到了 AI Agent》"
+      ],
+      "gold_docs": [
+        "Zed 创始人：Xanadu 等了六十年，终于等到了 AI Agent"
+      ],
       "gold_chunks": [
-        {"doc": "Zed 创始人：Xanadu 等了六十年，终于等到了 AI Agent", "must_contain": ["Nathan Sobo", "Xanadu"]}
+        {
+          "doc": "Zed 创始人：Xanadu 等了六十年，终于等到了 AI Agent",
+          "must_contain": [
+            "Nathan Sobo",
+            "Xanadu"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -784,10 +1395,20 @@
       "question": "针对企业员工私下使用大模型的问题，那篇文章提出的思路是什么？",
       "history": [],
       "standard_answer": "文章提出在内网部署一层轻量 API 网关（llm proxy tk），让大模型像公司内部的水电一样统一接入、按人发卡、用量可视、随时断供。",
-      "law_refs": ["《别再让员工偷偷用 ChatGPT 了：用一台内网网关，把大模型变成\"自来水\"》"],
-      "gold_docs": ["别再让员工偷偷用 ChatGPT 了：用一台内网网关，把大模型变成\"自来水\""],
+      "law_refs": [
+        "《别再让员工偷偷用 ChatGPT 了：用一台内网网关，把大模型变成\"自来水\"》"
+      ],
+      "gold_docs": [
+        "别再让员工偷偷用 ChatGPT 了：用一台内网网关，把大模型变成\"自来水\""
+      ],
       "gold_chunks": [
-        {"doc": "别再让员工偷偷用 ChatGPT 了：用一台内网网关，把大模型变成\"自来水\"", "must_contain": ["在内网部署一层轻量 API 网关", "统一接入"]}
+        {
+          "doc": "别再让员工偷偷用 ChatGPT 了：用一台内网网关，把大模型变成\"自来水\"",
+          "must_contain": [
+            "在内网部署一层轻量 API 网关",
+            "统一接入"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -798,10 +1419,21 @@
       "question": "有人在 ChatGPT 桌面应用里发现了什么？它占用了多大空间？",
       "history": [],
       "standard_answer": "Simon Willison 在清理磁盘时发现了一个 1.7GB 的目录，里面装着一整套 LibreOffice，路径在 codex 运行时插件目录下，其中还包含完整的 Python、Node.js 等组件。",
-      "law_refs": ["《ChatGPT 桌面应用里藏着 430MB 的 LibreOffice》"],
-      "gold_docs": ["ChatGPT 桌面应用里藏着 430MB 的 LibreOffice"],
+      "law_refs": [
+        "《ChatGPT 桌面应用里藏着 430MB 的 LibreOffice》"
+      ],
+      "gold_docs": [
+        "ChatGPT 桌面应用里藏着 430MB 的 LibreOffice"
+      ],
       "gold_chunks": [
-        {"doc": "ChatGPT 桌面应用里藏着 430MB 的 LibreOffice", "must_contain": ["Simon Willison", "LibreOffice", "1.7GB"]}
+        {
+          "doc": "ChatGPT 桌面应用里藏着 430MB 的 LibreOffice",
+          "must_contain": [
+            "Simon Willison",
+            "LibreOffice",
+            "1.7GB"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -812,10 +1444,21 @@
       "question": "乐鑫推出的 ESP-Mosaico 是什么？面向谁？",
       "history": [],
       "standard_answer": "ESP-Mosaico 是乐鑫为 Coding Agent（代码智能体）设计的模块化开发板，支持多机拼接，以模块化硬件连接 Coding Agent，让创意可以不断组合、扩展并真正运行。",
-      "law_refs": ["《乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技》"],
-      "gold_docs": ["乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技"],
+      "law_refs": [
+        "《乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技》"
+      ],
+      "gold_docs": [
+        "乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技"
+      ],
       "gold_chunks": [
-        {"doc": "乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技", "chapter": "中国，上海 2026年8月19日", "must_contain": ["ESP-Mosaico 以模块化硬件连接 Coding Agent", "Coding Agent（代码智能体）设计的模块化开发板"]}
+        {
+          "doc": "乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技",
+          "chapter": "中国，上海 2026年8月19日",
+          "must_contain": [
+            "ESP-Mosaico 以模块化硬件连接 Coding Agent",
+            "Coding Agent（代码智能体）设计的模块化开发板"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -826,10 +1469,21 @@
       "question": "ESP-Mosaico 内置的 Coding Agent 叫什么？Chat Coding 主要面向哪些用户？",
       "history": [],
       "standard_answer": "内置的 Coding Agent 是 ESP-Claw，它也是对话式创作的入口；Chat Coding 主要面向初次接触编程或 AI 编程的创作者，创作者无需安装本地开发软件或配置工具链，描述需求后 ESP-Claw 会结合当前设备和已接模块的能力生成应用。",
-      "law_refs": ["《乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技》"],
-      "gold_docs": ["乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技"],
+      "law_refs": [
+        "《乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技》"
+      ],
+      "gold_docs": [
+        "乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技"
+      ],
       "gold_chunks": [
-        {"doc": "乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技", "chapter": "1. Chat Coding：从一句需求开始完成硬件原型", "must_contain": ["ESP-Claw", "Chat Coding 主要面向初次接触编程或 AI 编程的创作者"]}
+        {
+          "doc": "乐鑫发布 ESP-Mosaico：让 AI Coding 突破硬件边界 | 乐鑫科技",
+          "chapter": "1. Chat Coding：从一句需求开始完成硬件原型",
+          "must_contain": [
+            "ESP-Claw",
+            "Chat Coding 主要面向初次接触编程或 AI 编程的创作者"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -840,10 +1494,21 @@
       "question": "Pi-Sky 项目接收的飞机广播数据叫什么？工作在什么频段？",
       "history": [],
       "standard_answer": "飞机广播的是 ADS-B（Automatic Dependent Surveillance Broadcast，自动相关监视广播）信号，多数现代飞机在 1090MHz 上以短突发形式每秒广播数次。",
-      "law_refs": ["《Pi-Sky flight-tracking dashboard》"],
-      "gold_docs": ["Pi-Sky flight-tracking dashboard"],
+      "law_refs": [
+        "《Pi-Sky flight-tracking dashboard》"
+      ],
+      "gold_docs": [
+        "Pi-Sky flight-tracking dashboard"
+      ],
       "gold_chunks": [
-        {"doc": "Pi-Sky flight-tracking dashboard", "chapter": "**What aircraft transmit and how we receive it**", "must_contain": ["ADS-B stands for Automatic Dependent Surveillance Broadcast", "1090MHz"]}
+        {
+          "doc": "Pi-Sky flight-tracking dashboard",
+          "chapter": "**What aircraft transmit and how we receive it**",
+          "must_contain": [
+            "ADS-B stands for Automatic Dependent Surveillance Broadcast",
+            "1090MHz"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -854,10 +1519,20 @@
       "question": "Pi-Sky 是什么？它读取什么数据？",
       "history": [],
       "standard_answer": "Pi-Sky 是一个单体的 Python 应用与 Web 服务器，读取 dump1090 数据，通过公共 API 补充数据，并向已连接的浏览器实时推流 JSON，全部在本地运行。",
-      "law_refs": ["《Pi-Sky flight-tracking dashboard》"],
-      "gold_docs": ["Pi-Sky flight-tracking dashboard"],
+      "law_refs": [
+        "《Pi-Sky flight-tracking dashboard》"
+      ],
+      "gold_docs": [
+        "Pi-Sky flight-tracking dashboard"
+      ],
       "gold_chunks": [
-        {"doc": "Pi-Sky flight-tracking dashboard", "chapter": "**Introducing Pi-Sky**", "must_contain": ["Pi-Sky is a single Python application"]}
+        {
+          "doc": "Pi-Sky flight-tracking dashboard",
+          "chapter": "**Introducing Pi-Sky**",
+          "must_contain": [
+            "Pi-Sky is a single Python application"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -868,10 +1543,20 @@
       "question": "搭建 Pi-Sky 接收器一般需要什么样的树莓派设备？",
       "history": [],
       "standard_answer": "一般来说，任何具备 USB 和网络功能的现代 Raspberry Pi 计算机都可作为接收器的基础平台。",
-      "law_refs": ["《Pi-Sky flight-tracking dashboard》"],
-      "gold_docs": ["Pi-Sky flight-tracking dashboard"],
+      "law_refs": [
+        "《Pi-Sky flight-tracking dashboard》"
+      ],
+      "gold_docs": [
+        "Pi-Sky flight-tracking dashboard"
+      ],
       "gold_chunks": [
-        {"doc": "Pi-Sky flight-tracking dashboard", "chapter": "**Build your own receiver**", "must_contain": ["any modern Raspberry Pi computer with USB and networking"]}
+        {
+          "doc": "Pi-Sky flight-tracking dashboard",
+          "chapter": "**Build your own receiver**",
+          "must_contain": [
+            "any modern Raspberry Pi computer with USB and networking"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -882,10 +1567,20 @@
       "question": "Raspberry Pi Compute Module 5 Programming Jig 基于什么操作系统来简化量产流程？",
       "history": [],
       "standard_answer": "该编程夹具基于 Raspberry Pi OS 构建所需的软件，用于自动化安全启动实现、全盘加密和裸操作系统安装等生产环节，从而简化量产流程。",
-      "law_refs": ["《Introducing the Raspberry Pi Compute Module 5 Programming Jig》"],
-      "gold_docs": ["Introducing the Raspberry Pi Compute Module 5 Programming Jig"],
+      "law_refs": [
+        "《Introducing the Raspberry Pi Compute Module 5 Programming Jig》"
+      ],
+      "gold_docs": [
+        "Introducing the Raspberry Pi Compute Module 5 Programming Jig"
+      ],
       "gold_chunks": [
-        {"doc": "Introducing the Raspberry Pi Compute Module 5 Programming Jig", "chapter": "Built around Raspberry Pi OS", "must_contain": ["Raspberry Pi OS"]}
+        {
+          "doc": "Introducing the Raspberry Pi Compute Module 5 Programming Jig",
+          "chapter": "Built around Raspberry Pi OS",
+          "must_contain": [
+            "Raspberry Pi OS"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -896,10 +1591,20 @@
       "question": "Raspberry Pi Compute Module 5 Programming Jig 的售价是多少？",
       "history": [],
       "standard_answer": "售价为 600 美元，可通过其全球授权经销商网络订购。",
-      "law_refs": ["《Introducing the Raspberry Pi Compute Module 5 Programming Jig》"],
-      "gold_docs": ["Introducing the Raspberry Pi Compute Module 5 Programming Jig"],
+      "law_refs": [
+        "《Introducing the Raspberry Pi Compute Module 5 Programming Jig》"
+      ],
+      "gold_docs": [
+        "Introducing the Raspberry Pi Compute Module 5 Programming Jig"
+      ],
       "gold_chunks": [
-        {"doc": "Introducing the Raspberry Pi Compute Module 5 Programming Jig", "chapter": "Available now", "must_contain": ["$600"]}
+        {
+          "doc": "Introducing the Raspberry Pi Compute Module 5 Programming Jig",
+          "chapter": "Available now",
+          "must_contain": [
+            "$600"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -909,14 +1614,30 @@
       "category": "多轮指代",
       "question": "那 UART 控制器呢？有几个？",
       "history": [
-        {"role": "user", "content": "ESP32 有几个 I2C 控制器？"},
-        {"role": "assistant", "content": "ESP32 有 2 个 I2C 控制器。"}
+        {
+          "role": "user",
+          "content": "ESP32 有几个 I2C 控制器？"
+        },
+        {
+          "role": "assistant",
+          "content": "ESP32 有 2 个 I2C 控制器。"
+        }
       ],
       "standard_answer": "ESP32 芯片有 3 个 UART 控制器（端口），每个控制器都可以独立配置波特率、数据位长度、位顺序、停止位位数、奇偶校验位等参数。",
-      "law_refs": ["《通用异步接收器/发送器 (UART)》"],
-      "gold_docs": ["通用异步接收器/发送器 (UART)"],
+      "law_refs": [
+        "《通用异步接收器/发送器 (UART)》"
+      ],
+      "gold_docs": [
+        "通用异步接收器/发送器 (UART)"
+      ],
       "gold_chunks": [
-        {"doc": "通用异步接收器/发送器 (UART)", "chapter": "简介", "must_contain": ["ESP32 芯片有 3 个 UART 控制器"]}
+        {
+          "doc": "通用异步接收器/发送器 (UART)",
+          "chapter": "简介",
+          "must_contain": [
+            "ESP32 芯片有 3 个 UART 控制器"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -926,14 +1647,30 @@
       "category": "多轮指代",
       "question": "那如果我把 PWM 频率设成 5 kHz，分辨率能到多少？",
       "history": [
-        {"role": "user", "content": "ESP32 的 LEDC 有几路通道？"},
-        {"role": "assistant", "content": "LEDC 有 8 路通道，可分为高速和低速两组。"}
+        {
+          "role": "user",
+          "content": "ESP32 的 LEDC 有几路通道？"
+        },
+        {
+          "role": "assistant",
+          "content": "LEDC 有 8 路通道，可分为高速和低速两组。"
+        }
       ],
       "standard_answer": "当 PWM 频率为 5 kHz 时，占空比分辨率最大可为 13 位，占空比可为 0 至 100% 之间的任意值，分辨率约 0.012%（2 ** 13 = 8192 个离散电平）。",
-      "law_refs": ["《LED PWM 控制器》"],
-      "gold_docs": ["LED PWM 控制器"],
+      "law_refs": [
+        "《LED PWM 控制器》"
+      ],
+      "gold_docs": [
+        "LED PWM 控制器"
+      ],
       "gold_chunks": [
-        {"doc": "LED PWM 控制器", "chapter": "频率和占空比分辨率支持范围", "must_contain": ["PWM 频率为 5 kHz 时，占空比分辨率最大可为 13 位"]}
+        {
+          "doc": "LED PWM 控制器",
+          "chapter": "频率和占空比分辨率支持范围",
+          "must_contain": [
+            "PWM 频率为 5 kHz 时，占空比分辨率最大可为 13 位"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -943,14 +1680,31 @@
       "category": "多轮指代",
       "question": "那它的最大数据包长度是多少？",
       "history": [
-        {"role": "user", "content": "ESP-NOW 是什么协议？"},
-        {"role": "assistant", "content": "ESP-NOW 是乐鑫定义的一种无连接 Wi-Fi 通信协议。"}
+        {
+          "role": "user",
+          "content": "ESP-NOW 是什么协议？"
+        },
+        {
+          "role": "assistant",
+          "content": "ESP-NOW 是乐鑫定义的一种无连接 Wi-Fi 通信协议。"
+        }
       ],
       "standard_answer": "目前 ESP-NOW 支持 v1.0 和 v2.0 两个版本：v1.0 设备支持的最大数据包长度为 250 字节，v2.0 设备支持的最大数据包长度为 1470 字节，默认比特率为 1 Mbps。",
-      "law_refs": ["《ESP-NOW》"],
-      "gold_docs": ["ESP-NOW"],
+      "law_refs": [
+        "《ESP-NOW》"
+      ],
+      "gold_docs": [
+        "ESP-NOW"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-NOW", "chapter": "帧格式", "must_contain": ["250", "1470"]}
+        {
+          "doc": "ESP-NOW",
+          "chapter": "帧格式",
+          "must_contain": [
+            "250",
+            "1470"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -960,14 +1714,30 @@
       "category": "多轮指代",
       "question": "那 ESP-Modbus 支持哪些接口网络呢？",
       "history": [
-        {"role": "user", "content": "ESP-MQTT 是什么？"},
-        {"role": "assistant", "content": "ESP-MQTT 是轻量级发布/订阅消息协议客户端，现已支持 MQTT v5.0。"}
+        {
+          "role": "user",
+          "content": "ESP-MQTT 是什么？"
+        },
+        {
+          "role": "assistant",
+          "content": "ESP-MQTT 是轻量级发布/订阅消息协议客户端，现已支持 MQTT v5.0。"
+        }
       ],
       "standard_answer": "乐鑫 ESP-Modbus 库 (esp-modbus) 支持基于 RS485、Wi-Fi 和以太网接口网络的 Modbus 通信。",
-      "law_refs": ["《ESP-Modbus》"],
-      "gold_docs": ["ESP-Modbus"],
+      "law_refs": [
+        "《ESP-Modbus》"
+      ],
+      "gold_docs": [
+        "ESP-Modbus"
+      ],
       "gold_chunks": [
-        {"doc": "ESP-Modbus", "chapter": "ESP-Modbus", "must_contain": ["支持基于 RS485、Wi-Fi 和以太网接口网络的 Modbus 通信"]}
+        {
+          "doc": "ESP-Modbus",
+          "chapter": "ESP-Modbus",
+          "must_contain": [
+            "支持基于 RS485、Wi-Fi 和以太网接口网络的 Modbus 通信"
+          ]
+        }
       ],
       "security_level": 1,
       "expect_refusal": false
@@ -1043,6 +1813,698 @@
       "gold_chunks": [],
       "security_level": 1,
       "expect_refusal": true
+    },
+    {
+      "id": "Q075",
+      "category": "树莓派",
+      "question": "万圣节服装检测器项目用了哪些硬件？它是怎么“讲笑话”的？",
+      "history": [],
+      "standard_answer": "项目使用 Raspberry Pi 5、NoIR PiCamera 摄像头和 speaker bonnet 音频扩展板。树莓派运行 Python 脚本用 OpenCV 做人体检测，当有人经过骷髅时自动拍照并发送给 Claude，请求生成一句关于对方万圣节装扮的善意冷笑话，返回的笑话再经 Piper 文本转语音，通过扬声器播放。",
+      "law_refs": [
+        "《Halloween Costume Detector #Raspberry Pi》"
+      ],
+      "gold_docs": [
+        "Halloween Costume Detector #Raspberry Pi"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "Halloween Costume Detector #Raspberry Pi",
+          "must_contain": [
+            "Raspberry Pi 5 paired with a NoIR PiCamera and speaker bonnet",
+            "OpenCV person detection"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q076",
+      "category": "树莓派",
+      "question": "电子纸相机（Digital Film）用的是什么树莓派？每个“胶片”墨盒里是什么屏幕？",
+      "history": [],
+      "standard_answer": "这是一台基于墨盒的树莓派相机，通过“打印”输出到电子纸。3D 打印的机身内装有 Raspberry Pi 3 A+、摄像头模块、电池和 microSD 卡；每个墨盒内是一块 1.54 英寸四色电子纸模块，拍摄后的静态照片可以显示或被反复覆盖写入。",
+      "law_refs": [
+        "《Semi-Permanent E-Paper Camera with ‘Digital Film’ #piday #raspberrypi》"
+      ],
+      "gold_docs": [
+        "Semi-Permanent E-Paper Camera with ‘Digital Film’ #piday #raspberrypi"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "Semi-Permanent E-Paper Camera with ‘Digital Film’ #piday #raspberrypi",
+          "must_contain": [
+            "cartridge-based Raspberry Pi camera",
+            "1.54"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q077",
+      "category": "树莓派",
+      "question": "那款树莓派 5 掌上 cyberdeck 用什么供电？外接显示器怎么接？",
+      "history": [],
+      "standard_answer": "该 DIY 掌上 cyberdeck 专为自购的 Raspberry Pi 5 设计（不使用更贵的 Compute Module）。采用 5V 3A 移动电源供电，重负载时可直接换用官方 Pi 电源且无需拆螺丝；Mini HDMI 接口保持空闲，可直接连接外接显示器。",
+      "law_refs": [
+        "《Raspberry Pi 5 Cyberdeck – DIY Handheld with Powerbank #3DThursday #3DPrinting》"
+      ],
+      "gold_docs": [
+        "Raspberry Pi 5 Cyberdeck – DIY Handheld with Powerbank #3DThursday #3DPrinting"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "Raspberry Pi 5 Cyberdeck – DIY Handheld with Powerbank #3DThursday #3DPrinting",
+          "must_contain": [
+            "Powerbank battery (5V 3A)",
+            "Mini HDMI"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q078",
+      "category": "树莓派",
+      "question": "PiDeck 这款 7 英寸 cyberdeck 围绕哪些硬件构建？结构上有什么讲究？",
+      "history": [],
+      "standard_answer": "PiDeck 围绕 Waveshare IO Board 与 NVMe HAT 构建，配备 7 英寸显示屏，整体采用 M2.5 五金件全螺栓固定。作者说明它“不适合新手”，各部件公差要求严格，并提供了 CAD（.step）文件，便于按自己的元件修改外壳。",
+      "law_refs": [
+        "《PiDeck – 7-Inch Cyberdeck for Raspberry Pi 5 with Waveshare IO + NVMe HAT #3DThursday #3DPrinting》"
+      ],
+      "gold_docs": [
+        "PiDeck – 7-Inch Cyberdeck for Raspberry Pi 5 with Waveshare IO + NVMe HAT #3DThursday #3DPrinting"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "PiDeck – 7-Inch Cyberdeck for Raspberry Pi 5 with Waveshare IO + NVMe HAT #3DThursday #3DPrinting",
+          "must_contain": [
+            "Waveshare IO Board and NVMe HAT",
+            "M2.5"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q079",
+      "category": "树莓派",
+      "question": "虹膜颜色检测项目用什么硬件？它如何定位虹膜并判断主色？",
+      "history": [],
+      "standard_answer": "硬件由 Raspberry Pi 3 Model B+ 与 Raspberry Pi Camera Module 3 组成，按下接在 GPIO 排针上的按钮即拍照，照片交给 OpenCV 处理。处理时先用 Haar 级联分类器检测人脸与眼睛，再用受 Daugman 启发的圆形梯度搜索算法估计虹膜边界；提取虹膜区域像素后，用 RGB 与 HSV 直方图和 k-means 聚类取最大簇作为代表色，最后按预设 HSV 阈值归类为深棕、棕、浅棕、蓝、绿、琥珀或灰。",
+      "law_refs": [
+        "《Iris colour detection with Raspberry Pi》"
+      ],
+      "gold_docs": [
+        "Iris colour detection with Raspberry Pi"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "Iris colour detection with Raspberry Pi",
+          "must_contain": [
+            "Raspberry Pi 3 Model B+ and a Raspberry Pi Camera Module 3",
+            "OpenCV to determine the colour of the iris"
+          ]
+        },
+        {
+          "doc": "Iris colour detection with Raspberry Pi",
+          "must_contain": [
+            "Daugman-inspired circular gradient search algorithm",
+            "k-means clustering"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q080",
+      "category": "树莓派",
+      "question": "《Raspberry Pi Book of Making 2027》里的水下探测车项目需要哪些材料？",
+      "history": [],
+      "standard_answer": "水下探测车项目用几根从五金店买来的 PVC 管、一个电机和基础电子元件即可搭建，并用 Raspberry Pi 控制；还可以加装摄像头去探索海底（现实中多为浴缸底）。同一本书里还有折纸电路灯、从零开始学电子、设计第一块 PCB 等项目。",
+      "law_refs": [
+        "《Just released: Raspberry Pi Book of Making 2027》"
+      ],
+      "gold_docs": [
+        "Just released: Raspberry Pi Book of Making 2027"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "Just released: Raspberry Pi Book of Making 2027",
+          "must_contain": [
+            "PVC pipes",
+            "underwater rover"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q081",
+      "category": "树莓派",
+      "question": "Pi-Sky 收到的飞行数据存在哪里？默认保留多久？",
+      "history": [],
+      "standard_answer": "接收到的飞行数据存储在本地 SQLite 数据库中，保留时长可配置，默认七天。历史页面支持在地图上回放航班、按日期/航线/机型/型号过滤，并查看单架航班的缩略地图和飞机照片。",
+      "law_refs": [
+        "《Pi-Sky flight-tracking dashboard》"
+      ],
+      "gold_docs": [
+        "Pi-Sky flight-tracking dashboard"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "Pi-Sky flight-tracking dashboard",
+          "must_contain": [
+            "stored in SQLite",
+            "default is seven days"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q082",
+      "category": "电子电路",
+      "question": "FSV9523 这颗国产 NFC 读写芯片的工作频率、支持的速率和读写距离是多少？",
+      "history": [],
+      "standard_answer": "FSV9523 是一颗 13.56MHz 高集成非接触读写芯片，兼容 ISO/IEC 14443 Type A / Type B，原生支持 MIFARE Classic 加密通信；除 106kbit/s 常规速率外还支持 212kbit/s、424kbit/s 高速读卡，读写距离最高可达 50mm，可通过天线布局与谐振调谐适配产品需求。",
+      "law_refs": [
+        "《FSV9523｜国产 NFC 读卡芯片，补齐 14443 读写方案替代短板 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "FSV9523｜国产 NFC 读卡芯片，补齐 14443 读写方案替代短板 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "FSV9523｜国产 NFC 读卡芯片，补齐 14443 读写方案替代短板 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "13.56MHz",
+            "50mm"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q083",
+      "category": "电子电路",
+      "question": "FSV8943 是无源 NFC-SOC，它的内核与存储配置如何？为什么能做到无源工作？",
+      "history": [],
+      "standard_answer": "FSV8943 内置 32 位 ARM Cortex-M0+ 内核，最高工作频率 32MHz，搭载 64K Flash 与 8K SRAM，完整支持 ISO/IEC 14443-A 协议，工作频率 13.56MHz，具备双重防冲突与 16bit-CRC 校验。芯片原生支持射频取电无源模式，无需电池或外部供电，依靠手机 NFC 场获取能量运行；同时支持 1.7V-3.5V 有源供电，可无源、有源两种形态使用。",
+      "law_refs": [
+        "《国产无源 NFC‑SOC 新方案：FSV8943，破解碰一碰物联网的供应链与架构痛点 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "国产无源 NFC‑SOC 新方案：FSV8943，破解碰一碰物联网的供应链与架构痛点 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "国产无源 NFC‑SOC 新方案：FSV8943，破解碰一碰物联网的供应链与架构痛点 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "Cortex‑M0",
+            "64K Flash"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q084",
+      "category": "电子电路",
+      "question": "有源光纤是什么材料？常见的稀土掺杂技术路线有哪些？",
+      "history": [],
+      "standard_answer": "有源光纤是在光纤纤芯中引入稀土离子等活性掺杂体系、并在外部泵浦作用下实现受激辐射、提供光学增益的特种光纤，是光纤激光器与光纤放大器系统的核心功能介质。典型技术路线包括掺镱、掺铒、掺铒镱共掺、掺铥与掺钬，覆盖从近红外到中红外的多个工作波段，可按需要设计为单包层或双（多）包层、不同芯径与数值孔径、保偏或非保偏、大模场等规格。",
+      "law_refs": [
+        "《2026年全球有源光纤产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "2026年全球有源光纤产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "2026年全球有源光纤产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "受激辐射",
+            "掺镱"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q085",
+      "category": "电子电路",
+      "question": "睡眠监测产品分为哪几类？医用级设备以什么为代表？",
+      "history": [],
+      "standard_answer": "睡眠监测产品按应用场景和技术路径分为三类：可穿戴设备（手环、手表、戒指等）、非接触式床旁设备（床垫下传感器、床旁雷达或压力传感器）以及医用级睡眠监测与筛查设备。医用级以多导睡眠监测 PSG 和家用睡眠呼吸检测 HSAT 为代表，信号完整性与诊断准确性更高，是阻塞性睡眠呼吸暂停、周期性肢动等睡眠障碍的标准评估工具。",
+      "law_refs": [
+        "《2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "2026年全球睡眠监测产业分析报告 - 蓝牙技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "PSG 和 HSAT 为代表",
+            "阻塞性睡眠呼吸暂停"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q086",
+      "category": "电子电路",
+      "question": "FSV4730 数字 AM/FM 收音芯片支持哪些频段？集成的链路覆盖到哪一步？",
+      "history": [],
+      "standard_answer": "FSV4730 是 CMOS 工艺的数字 AM/FM 收音接收 IC，芯片集成了从天线输入到 I2S 数字音频输出的完整调谐链路，可精简外围器件、优化 BOM 与 PCB 设计。它支持全球 FM 64-108MHz、AM 520-1710kHz，衍生型号 FSV4734/35 进一步拓展 SW 短波与 LW 长波；内置 VCO、AFC、AGC、数字立体声解码、可编程去加重与软静音等功能，无需手动校准。",
+      "law_refs": [
+        "《消费音频国产替代选型｜福芯微 FSV4730 数字 AM/FM 收音芯片分享案例 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "消费音频国产替代选型｜福芯微 FSV4730 数字 AM/FM 收音芯片分享案例 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "消费音频国产替代选型｜福芯微 FSV4730 数字 AM/FM 收音芯片分享案例 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "FM 64",
+            "I2S 数字音频输出"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q087",
+      "category": "电子电路",
+      "question": "小型无人机的重量是如何界定的？在中国境内飞行有什么登记要求？",
+      "history": [],
+      "standard_answer": "小型无人机指空机重量 4 千克＜W ≤ 15 千克（不含电池、载荷等）的无人机，满载重量不超过 25 千克，主要面向农业植保、物流运输、航拍摄影、电力巡检等场景。在中国境内飞行需通过 UTMISS 系统完成实名认证，未经批准不得在管制空域（如机场、军事区）飞行。",
+      "law_refs": [
+        "《2026年全球小型无人机产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "2026年全球小型无人机产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "2026年全球小型无人机产业分析报告 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "空机重量 4千克",
+            "不超过25千克"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q088",
+      "category": "无线通信",
+      "question": "LoRa 基于什么调制技术？接收灵敏度能到什么水平？",
+      "history": [],
+      "standard_answer": "LoRa 全称 Long Range，是基于线性调频扩频（Chirp Spread Spectrum，CSS）的低功耗广域无线通信技术。它把信号能量扩展到较宽频带传输，接收灵敏度可达 137dBm 甚至 146dBm，即使信号比噪声低 19.5dB 也能正确解调，而传统 FSK 调制通常需要 8-10dB 信噪比；配合前向纠错（FEC）机制，抗窄带干扰能力很强。",
+      "law_refs": [
+        "《LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "LoRa无线模块技术解析：从扩频原理到工程选型，一篇讲透 - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "Chirp Spread Spectrum",
+            "137dBm"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q089",
+      "category": "无线通信",
+      "question": "nRF54L05 支持哪些无线协议？处理器与内存配置如何？",
+      "history": [],
+      "standard_answer": "nRF54L05 与 nRF54L15、nRF54L10 同属 nRF54L 系列，集成超低功耗多协议 2.4GHz 无线电和 MCU 功能，配备 128MHz 的 Arm Cortex-M33 处理器与较全面的外设集合。它支持低功耗蓝牙、蓝牙 Mesh、Thread、Zigbee 及专有 2.4GHz 协议，拥有该系列最小的内存选项：0.5MB 非易失性存储器（NVM）和 96KB RAM，面向成本敏感型应用。",
+      "law_refs": [
+        "《nRF54L05—超低功耗无线 SoC - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "nRF54L05—超低功耗无线 SoC - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "nRF54L05—超低功耗无线 SoC - 天线|RF射频|微波|雷达技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "128MHz",
+            "96KB RAM"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q090",
+      "category": "无线通信",
+      "question": "ESP32-C5-WROOM-1U-N16R8 模组支持哪些无线协议？数据速率是多少？",
+      "history": [],
+      "standard_answer": "该模组是通用型 2.4 & 5GHz 双频 Wi-Fi 6（802.11ax）模组，同时支持 Bluetooth 5 LE、Zigbee 3.0 与 Thread 802.15.4，数据速率高达 150 Mbps，并完全兼容 IEEE 802.11b/g/n。它内置 ESP32-C5 芯片（RISC-V 32 位单核，主频最高 240MHz），采用连接器外接天线，适用于智能家居、工业自动化、医疗保健与消费电子等场景。",
+      "law_refs": [
+        "《ESP32-C5-WROOM-1U-N16R8 - WIFI技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!》"
+      ],
+      "gold_docs": [
+        "ESP32-C5-WROOM-1U-N16R8 - WIFI技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "ESP32-C5-WROOM-1U-N16R8 - WIFI技术 - 电子技术论坛  - 广受欢迎的专业电子论坛!",
+          "must_contain": [
+            "2.4 & 5GHz",
+            "150 Mbps"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q091",
+      "category": "多轮指代",
+      "question": "那上拉电阻这里要注意什么？",
+      "history": [
+        {
+          "role": "user",
+          "content": "ESP-IDF 的 I2C 主机通信超时报 ESP_ERR_TIMEOUT 是怎么回事？"
+        },
+        {
+          "role": "assistant",
+          "content": "ESP_ERR_TIMEOUT 通常表示 I2C 总线通信超时，多半与总线时序或上拉配置有关。"
+        }
+      ],
+      "standard_answer": "文档建议首先检查上拉电阻：须将上拉电阻连接到 SCL 和 SDA 管脚；若暂时没有合适的电阻，也可以把 flags.enable_internal_pullup 设为 true 来启用内部上拉。",
+      "law_refs": [
+        "《I2C 接口》"
+      ],
+      "gold_docs": [
+        "I2C 接口"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "I2C 接口",
+          "chapter": "I2C 主机控制器",
+          "must_contain": [
+            "须将上拉电阻连接到 SCL 和 SDA 管脚"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q092",
+      "category": "多轮指代",
+      "question": "那如果调高衰减等级，测量范围会怎么变？",
+      "history": [
+        {
+          "role": "user",
+          "content": "ESP32 的 ADC 支持哪些衰减等级？"
+        },
+        {
+          "role": "assistant",
+          "content": "支持 0 dB、2.5 dB、6 dB 和 12 dB 四档衰减。"
+        }
+      ],
+      "standard_answer": "衰减等级越高，ADC 可测量的输入电压范围越大。",
+      "law_refs": [
+        "《模数转换器 (ADC)》"
+      ],
+      "gold_docs": [
+        "模数转换器 (ADC)"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "模数转换器 (ADC)",
+          "chapter": "ADC 衰减",
+          "must_contain": [
+            "衰减等级越高，ADC 可测量的输入电压范围越大"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q093",
+      "category": "多轮指代",
+      "question": "那如果我不想改某个管脚的编号，要传什么？",
+      "history": [
+        {
+          "role": "user",
+          "content": "ESP-IDF 里配置 UART 的 Tx/Rx 管脚用哪个函数？"
+        },
+        {
+          "role": "assistant",
+          "content": "使用 uart_set_pin() 指定 Tx、Rx、RTS、CTS、DTR 和 DSR 对应的 GPIO 编号。"
+        }
+      ],
+      "standard_answer": "如果希望保留某个管脚当前的分配编号，可以给 uart_set_pin() 对应参数传宏 UART_PIN_NO_CHANGE。",
+      "law_refs": [
+        "《通用异步接收器/发送器 (UART)》"
+      ],
+      "gold_docs": [
+        "通用异步接收器/发送器 (UART)"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "通用异步接收器/发送器 (UART)",
+          "chapter": "设置通信管脚",
+          "must_contain": [
+            "UART_PIN_NO_CHANGE"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q094",
+      "category": "多轮指代",
+      "question": "那它默认的比特率是多少？",
+      "history": [
+        {
+          "role": "user",
+          "content": "ESP-NOW 发送数据前要先把对方加入配对列表吗？"
+        },
+        {
+          "role": "assistant",
+          "content": "是的，需要先调用 esp_now_add_peer() 把对方加入配对设备列表。"
+        }
+      ],
+      "standard_answer": "ESP-NOW 的默认比特率为 1 Mbps。",
+      "law_refs": [
+        "《ESP-NOW》"
+      ],
+      "gold_docs": [
+        "ESP-NOW"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "ESP-NOW",
+          "chapter": "帧格式",
+          "must_contain": [
+            "1 Mbps"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q095",
+      "category": "拒答无关",
+      "question": "2026 年诺贝尔物理学奖的获得者是谁？",
+      "history": [],
+      "standard_answer": "该问题与嵌入式开发教学知识库无关，应拒答。",
+      "law_refs": [],
+      "gold_docs": [],
+      "gold_chunks": [],
+      "security_level": 1,
+      "expect_refusal": true
+    },
+    {
+      "id": "Q096",
+      "category": "拒答无关",
+      "question": "帮我翻译一份法语商业合同的条款。",
+      "history": [],
+      "standard_answer": "该问题与嵌入式开发教学知识库无关，应拒答。",
+      "law_refs": [],
+      "gold_docs": [],
+      "gold_chunks": [],
+      "security_level": 1,
+      "expect_refusal": true
+    },
+    {
+      "id": "Q097",
+      "category": "拒答无关",
+      "question": "ESP32 开发板在哪个网店买最便宜？有没有优惠券？",
+      "history": [],
+      "standard_answer": "该问题属于购买渠道咨询，与教学知识库内容无关，应拒答。",
+      "law_refs": [],
+      "gold_docs": [],
+      "gold_chunks": [],
+      "security_level": 1,
+      "expect_refusal": true
+    },
+    {
+      "id": "Q098",
+      "category": "拒答无关",
+      "question": "我最近总是失眠，应该吃什么药？",
+      "history": [],
+      "standard_answer": "该问题属于医疗建议，超出教学知识库范围，应拒答。",
+      "law_refs": [],
+      "gold_docs": [],
+      "gold_chunks": [],
+      "security_level": 1,
+      "expect_refusal": true
+    },
+    {
+      "id": "Q099",
+      "category": "ESP32硬件",
+      "question": "ESP32 的 SPI 主机驱动程序有哪些特性？多个任务访问同一 SPI 设备安全吗？",
+      "history": [],
+      "standard_answer": "SPI 主机驱动程序负责管理主机与设备间的通信，特性包括：支持多线程环境使用、读写数据过程中 DMA 透明传输、同一信号总线上不同设备的数据可自动时分复用（SPI 总线锁）。线程安全的前提是每个设备仅由一个任务访问；若多个任务尝试访问同一 SPI 设备，则驱动程序非线程安全，需要重构应用或自行加锁。",
+      "law_refs": [
+        "《SPI 主机驱动程序》"
+      ],
+      "gold_docs": [
+        "SPI 主机驱动程序"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "SPI 主机驱动程序",
+          "must_contain": [
+            "DMA 透明传输",
+            "非线程安全"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q100",
+      "category": "ESP32硬件",
+      "question": "一条 SPI 总线上的多个设备共享哪些信号线？设备在什么条件下才会被激活？",
+      "history": [],
+      "standard_answer": "一条 SPI 总线与一或多个设备连接，每个设备共享 MOSI、MISO 和 SCLK 信号，但只有当主机向设备的专属 CS 线发出信号时，该设备才会在总线上处于激活状态。",
+      "law_refs": [
+        "《SPI 主机驱动程序》"
+      ],
+      "gold_docs": [
+        "SPI 主机驱动程序"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "SPI 主机驱动程序",
+          "must_contain": [
+            "共享 MOSI、MISO 和 SCLK 信号",
+            "专属 CS 线"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q101",
+      "category": "ESP-IDF开发",
+      "question": "ESP-IDF 的分区表烧写在 flash 的哪个偏移地址？它有长度和条目数限制吗？",
+      "history": [],
+      "standard_answer": "分区表烧写在 flash 的默认偏移地址 0x8000 处。分区表长度为 0xC00 字节，最多可以保存 95 条分区表条目；分区表之后附加 MD5 校验和，用于在运行时验证分区表的完整性。分区表占据整个 flash 扇区，大小为 0x1000（4 KB）。",
+      "law_refs": [
+        "《分区表》"
+      ],
+      "gold_docs": [
+        "分区表"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "分区表",
+          "must_contain": [
+            "0x8000 处烧写一张分区表",
+            "0xC00 字节",
+            "95 条分区表条目"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q102",
+      "category": "AI边缘应用",
+      "question": "ESP-WHO 是什么？它提供哪些视觉示例、基于什么组件开发？",
+      "history": [],
+      "standard_answer": "ESP-WHO 是基于乐鑫芯片的图像处理开发平台，包含实际应用中可能出现的开发示例：人脸检测、人脸识别、行人检测、二维码识别等，可基于这些示例衍生出丰富的实际应用。ESP-WHO 基于 ESP-DL 开发，配合各种外设可以实现许多应用。",
+      "law_refs": [
+        "《ESP-WHO [[English]](./README.md)》"
+      ],
+      "gold_docs": [
+        "ESP-WHO [[English]](./README.md)"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "ESP-WHO [[English]](./README.md)",
+          "must_contain": [
+            "人脸检测、人脸识别、行人检测、二维码识别",
+            "ESP-WHO 基于[ESP-DL]"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
+    },
+    {
+      "id": "Q103",
+      "category": "AI边缘应用",
+      "question": "重构后的 ESP-WHO 有哪些新特性？",
+      "history": [],
+      "standard_answer": "重构后的 ESP-WHO 新增了多项能力：适配新版 ESP-DL；支持新芯片 ESP32-P4；摄像头和深度学习模型改为异步执行，可实现更高帧率；新增 LVGL（轻量级多功能图形库）支持，可自由开发图形应用；并添加了新的行人检测模型。",
+      "law_refs": [
+        "《ESP-WHO [[English]](./README.md)》"
+      ],
+      "gold_docs": [
+        "ESP-WHO [[English]](./README.md)"
+      ],
+      "gold_chunks": [
+        {
+          "doc": "ESP-WHO [[English]](./README.md)",
+          "must_contain": [
+            "支持新芯片 [ESP32-P4]",
+            "摄像头和深度学习模型现在异步执行"
+          ]
+        }
+      ],
+      "security_level": 1,
+      "expect_refusal": false
     }
   ]
 }

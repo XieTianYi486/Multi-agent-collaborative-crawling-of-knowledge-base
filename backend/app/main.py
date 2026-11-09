@@ -24,6 +24,8 @@ import app.models.ticket    # noqa: F401
 import app.models.audit     # noqa: F401
 import app.models.api_client  # noqa: F401
 import app.models.counselor   # noqa: F401
+import app.models.collection  # noqa: F401
+import app.models.video       # noqa: F401
 
 from app.models.user import Role, User
 from app.core.security import hash_password
@@ -36,6 +38,10 @@ async def lifespan(app: FastAPI):
     """应用启动和关闭时的生命周期管理"""
     # 启动时
     print(f"[启动] {settings.APP_NAME} v{settings.APP_VERSION}")
+
+    # 安全自检：非 DEBUG 环境检测到默认密钥/密码/关闭验证码时直接拒绝启动（先于任何数据初始化）
+    _assert_production_safety()
+
     print(f"[启动] 初始化数据库...")
 
     # 创建所有表
@@ -44,11 +50,8 @@ async def lifespan(app: FastAPI):
     # 初始化默认数据（角色 + 管理员）
     _init_default_data()
 
-    # 安全自检：生产部署前必须修改默认密钥/密码（检测到默认值仅告警，不阻断启动）
-    if settings.JWT_SECRET_KEY == "jwt-secret-change-in-production":
-        print("[安全警告] JWT_SECRET_KEY 仍为默认值，任何人均可伪造登录 Token，请立即修改 .env！")
-    if settings.ADMIN_PASSWORD == "admin123":
-        print("[安全警告] 默认管理员密码仍为 admin123，请立即修改 .env 中的 ADMIN_PASSWORD！")
+    # 预置视频专区数据（仅在视频表为空时写入）
+    _init_default_videos()
 
     print(f"[启动] 服务就绪，监听 {settings.HOST}:{settings.PORT}")
     yield
@@ -118,7 +121,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 from app.api.v1 import (
     auth, documents, chat, admin, tickets, security, crawler, api_clients,
-    counselor,
+    collection, counselor, videos, notifications,
 )
 
 app.include_router(auth.router, prefix="/api/v1")
@@ -131,7 +134,13 @@ app.include_router(tickets.admin_router, prefix="/api/v1")
 app.include_router(security.router, prefix="/api/v1")
 app.include_router(crawler.router, prefix="/api/v1")
 app.include_router(api_clients.router, prefix="/api/v1")
-app.include_router(counselor.router, prefix="/api/v1")
+app.include_router(collection.router, prefix="/api/v1")
+app.include_router(videos.router, prefix="/api/v1")
+app.include_router(videos.admin_router, prefix="/api/v1")
+app.include_router(notifications.router, prefix="/api/v1")
+# AI 助手：由配置开关控制（默认启用）
+if settings.COUNSELOR_ENABLED:
+    app.include_router(counselor.router, prefix="/api/v1")
 
 # 对外开放 API（API Key 鉴权，命名空间与内部接口隔离）
 from app.api.open_api import v1 as open_v1
@@ -161,6 +170,37 @@ def health_check():
 
 # ==================== 辅助函数 ====================
 
+def _assert_production_safety():
+    """
+    生产环境安全自检。
+
+    开发环境（DEBUG=true）只打印告警，便于本地调试；
+    非 DEBUG 环境检测到不安全生产配置时直接抛出异常，阻止带病上线。
+    """
+    default_jwt_keys = {"jwt-secret-change-in-production", "jwt-dev-secret-2024"}
+    problems = []
+    if settings.JWT_SECRET_KEY in default_jwt_keys:
+        problems.append("JWT_SECRET_KEY 仍为默认值（任何人可伪造登录 Token）")
+    if settings.ADMIN_PASSWORD == "admin123":
+        problems.append("ADMIN_PASSWORD 仍为默认密码 admin123")
+    if not settings.CAPTCHA_ENABLED:
+        problems.append("CAPTCHA_ENABLED=false（登录验证码被关闭）")
+
+    if not problems:
+        return
+
+    if settings.DEBUG:
+        for p in problems:
+            print(f"[安全警告] {p}，仅限本地开发使用，请勿用于生产部署！")
+        return
+
+    raise RuntimeError(
+        "检测到不安全生产配置，已拒绝启动：\n  - "
+        + "\n  - ".join(problems)
+        + "\n请在 backend/.env 中修改后重启（本地开发可设置 DEBUG=true 跳过此检查）。"
+    )
+
+
 def _init_default_data():
     """
     初始化默认角色和管理员账号
@@ -178,26 +218,42 @@ def _init_default_data():
             Role(name="知识库管理员", code="knowledge_admin",
                  description="管理文档和知识库内容",
                  permissions=["documents:*", "categories:*", "logs:read", "stats:read"]),
-            Role(name="部门管理员", code="dept_admin",
-                 description="管理部门文档和问答统计",
+            Role(name="院系管理员", code="dept_admin",
+                 description="管理院系文档和问答统计",
                  permissions=["documents:read", "stats:read"]),
             Role(name="老师", code="teacher",
-                 description="教学人员，可查询知识库内容与统计",
-                 permissions=["chat:ask", "documents:read", "stats:read"]),
+                 description="教学人员，可查询知识库内容并投稿教学资料",
+                 permissions=["chat:ask", "documents:read", "documents:upload", "stats:read"]),
             Role(name="学生", code="student",
                  description="学生，可查询知识库内容",
                  permissions=["chat:ask", "documents:read"]),
-            Role(name="普通员工", code="employee",
-                 description="查询知识库收录的技术资料",
+            Role(name="访客", code="employee",
+                 description="浏览与检索公开教学资料",
                  permissions=["chat:ask", "documents:read"]),
         ]
 
         # 幂等补齐：按 code 插入缺失角色（兼容已有数据库）
-        existing_codes = {r.code for r in db.query(Role).all()}
+        existing_roles = {r.code: r for r in db.query(Role).all()}
         for role in roles:
-            if role.code not in existing_codes:
+            if role.code not in existing_roles:
                 db.add(role)
         db.flush()
+
+        # 老库升级：教师角色补齐文档投稿权限（不覆盖管理员已自定义的其余权限）
+        teacher = existing_roles.get("teacher")
+        if teacher is not None:
+            perms = list(teacher.permissions or [])
+            if "documents:upload" not in perms:
+                teacher.permissions = perms + ["documents:upload"]
+                db.flush()
+
+        # 老库升级：把旧项目（企业制度/劳动法）遗留的角色命名改为教学场景用语
+        role_renames = {"dept_admin": "院系管理员", "employee": "访客"}
+        for code, name in role_renames.items():
+            role = existing_roles.get(code)
+            if role is not None and role.name != name:
+                role.name = name
+                db.flush()
 
         # 创建默认管理员（仅当不存在任何超级管理员用户时）
         admin_role = db.query(Role).filter(Role.code == "super_admin").first()
@@ -222,5 +278,26 @@ def _init_default_data():
 
         db.commit()
 
+    finally:
+        db.close()
+
+
+def _init_default_videos():
+    """
+    预置视频专区精选条目
+    幂等：仅在 videos 表为空时写入，管理员后续删除/编辑不会被还原
+    """
+    from app.db.sqlite import SessionLocal
+    from app.services.video_seed import seed_default_videos
+
+    db = SessionLocal()
+    try:
+        created = seed_default_videos(db)
+        db.commit()
+        if created:
+            print(f"[启动] 已预置 {created} 个精选视频（视频专区）")
+    except Exception as exc:
+        db.rollback()
+        print(f"[启动] 视频预置数据初始化失败（不影响服务启动）: {exc}")
     finally:
         db.close()

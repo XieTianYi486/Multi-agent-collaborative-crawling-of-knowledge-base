@@ -40,6 +40,7 @@ import app.models.document  # noqa: E402, F401
 import app.models.chat  # noqa: E402, F401
 import app.models.ticket  # noqa: E402, F401
 import app.models.audit  # noqa: E402, F401
+import app.models.video  # noqa: E402, F401
 
 from app.db.sqlite import init_db, engine, SessionLocal  # noqa: E402
 
@@ -70,8 +71,8 @@ def roles(db):
     defaults = [
         ("超级管理员", "super_admin"),
         ("知识库管理员", "knowledge_admin"),
-        ("部门管理员", "dept_admin"),
-        ("普通员工", "employee"),
+        ("院系管理员", "dept_admin"),
+        ("访客", "employee"),
         ("老师", "teacher"),
         ("学生", "student"),
     ]
@@ -86,7 +87,7 @@ def roles(db):
 
 @pytest.fixture()
 def employee_user(db, roles):
-    """普通员工测试用户（密码 test123456，状态正常）
+    """访客测试用户（密码 test123456，状态正常）
     用户名带随机后缀：用例内提交的数据会持久化，避免跨用例唯一键冲突
     """
     import uuid

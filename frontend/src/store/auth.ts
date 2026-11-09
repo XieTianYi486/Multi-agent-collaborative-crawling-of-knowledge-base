@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { authApi } from '@/api/auth'
+import { useChatStore } from './chat'
 import router from '@/router'
 
 export interface UserInfo {
@@ -51,6 +52,8 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = data.access_token
       user.value = data.user
       localStorage.setItem('access_token', data.access_token)
+      // 切换账号：清空上一个账号留在内存里的会话与消息
+      useChatStore().reset()
       // 按身份跳转：管理员进管理后台，学生/老师进智能问答
       router.push(isAdmin() ? '/admin/documents' : '/chat')
     } finally {
@@ -60,6 +63,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** 退出 */
   function logout() {
+    useChatStore().reset()
     token.value = ''
     user.value = null
     localStorage.removeItem('access_token')

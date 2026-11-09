@@ -35,7 +35,7 @@
 - 流式输出（SSE）
 
 ### 4. 用户权限
-- RBAC 权限模型（普通员工、部门管理员、知识库管理员、超级管理员）
+- RBAC 权限模型（学生、老师、院系管理员、知识库管理员、超级管理员）
 - JWT Token 认证
 - 文档密级与用户角色匹配的检索过滤
 
@@ -46,7 +46,8 @@
 - 系统配置热更新
 
 ### 6. 扩展功能
-- **AI 导员**：独立校规知识库（独立向量/BM25 索引），双模式问答——知识命中按条款严格作答、未命中转人设陪伴并提示线下核实（防编造校规）；悬浮窗交互（可拖动、多轮会话、历史记录）
+- **AI 助手**：悬浮式智能助手，直接复用主教学知识库 RAG（与 /chat 同一检索链路），支持多轮会话、历史记录、引用来源展开与语音播报；由 `COUNSELOR_ENABLED` 控制启用
+- **视频专区**：独立页面展示 B 站精选入门课程（ESP32 / ESP-IDF / Arduino / FreeRTOS / 树莓派 / 电子电路），首轮预置 14 个已校验视频；只存 BV 号等元数据，播放走 B 站官方 iframe，不转存视频；管理端支持增删改查、排序与上下架（播放量/封面为手动维护快照）
 - **开放 API**：`/openapi/v1` 命名空间，API Key（SHA-256 哈希存储）鉴权 + 调用方密级上限，供第三方系统对接检索/问答
 - **工单系统**：师生提交问题工单，管理员处理流转
 - **敏感词管理**：提问侧高危词拦截（审计留痕）+ 回答侧脱敏
@@ -119,6 +120,7 @@ Multi-agent collaborative crawling of knowledge base/
 │   │   │   │   ├── auth.py       # 认证接口
 │   │   │   │   ├── chat.py       # 问答接口
 │   │   │   │   ├── documents.py  # 文档管理接口
+│   │   │   │   ├── videos.py     # 视频专区 + 视频管理接口
 │   │   │   │   └── admin.py      # 管理接口
 │   │   │   └── deps.py          # 依赖注入（获取当前用户等）
 │   │   ├── core/             # 核心模块
@@ -128,6 +130,7 @@ Multi-agent collaborative crawling of knowledge base/
 │   │   ├── models/           # SQLAlchemy 数据模型
 │   │   │   ├── user.py
 │   │   │   ├── document.py
+│   │   │   ├── video.py
 │   │   │   └── chat.py
 │   │   ├── schemas/          # Pydantic 请求/响应模型
 │   │   ├── db/               # 数据库连接
@@ -169,11 +172,13 @@ Multi-agent collaborative crawling of knowledge base/
 │   │   │   ├── client.ts        # Axios 实例与拦截器
 │   │   │   ├── auth.ts
 │   │   │   ├── chat.ts
+│   │   │   ├── video.ts
 │   │   │   └── session.ts
 │   │   ├── views/            # 页面组件
 │   │   │   ├── auth/            # 登录/注册/个人中心
 │   │   │   ├── chat/            # 对话问答界面
-│   │   │   └── admin/           # 管理后台页面
+│   │   │   ├── videos/          # 视频专区（B 站精选）
+│   │   │   └── admin/           # 管理后台页面（含视频管理）
 │   │   ├── components/       # 公共组件
 │   │   ├── store/            # Pinia 状态管理
 │   │   ├── router/           # Vue Router 路由配置
@@ -297,6 +302,14 @@ register_crawl_task.bat                  # 注册 Windows 任务计划（每日 
 | GET | /api/v1/chat/sessions | 会话列表 |
 | POST | /api/v1/documents/upload | 上传文档 |
 | GET | /api/v1/documents | 文档列表 |
+| GET | /api/v1/videos | 视频列表（已上架，支持关键词/分类/难度） |
+| GET | /api/v1/videos/categories | 视频分类及数量 |
+| GET | /api/v1/videos/{id} | 视频详情 |
+| GET | /api/v1/admin/videos | 视频管理列表（管理员） |
+| POST | /api/v1/admin/videos | 新增视频（管理员） |
+| PUT | /api/v1/admin/videos/{id} | 编辑视频（管理员） |
+| PUT | /api/v1/admin/videos/{id}/status | 上架/下架（管理员） |
+| DELETE | /api/v1/admin/videos/{id} | 删除视频（管理员） |
 | GET | /api/v1/admin/stats/overview | 统计概览 |
 | GET | /api/v1/crawler/overview | 爬取中心总览（管理员） |
 | GET | /api/v1/crawler/sites | 站点采集状态 |
@@ -304,9 +317,9 @@ register_crawl_task.bat                  # 注册 Windows 任务计划（每日 
 | GET | /api/v1/crawler/usage | LLM 成本账本 |
 | POST | /api/v1/crawler/run | 手动触发爬取流水线（后台线程） |
 | GET | /api/v1/crawler/run | 流水线运行状态 |
-| POST | /api/v1/counselor/ask | AI 导员问答（同步） |
-| POST | /api/v1/counselor/stream | AI 导员问答（SSE 流式） |
-| GET | /api/v1/counselor/sessions | 导员会话列表 |
+| POST | /api/v1/counselor/ask | AI 助手问答（同步） |
+| POST | /api/v1/counselor/stream | AI 助手问答（SSE 流式） |
+| GET | /api/v1/counselor/sessions | AI 助手会话列表 |
 | POST | /openapi/v1/search | 开放 API 知识片段检索（API Key 鉴权） |
 | POST | /openapi/v1/ask | 开放 API 知识库问答（API Key 鉴权） |
 | GET | /api/health | 健康检查 |

@@ -27,7 +27,7 @@ from app.rag.retrievers.bm25_retriever import get_bm25_retriever
 from app.rag.retrievers.hybrid_retriever import get_hybrid_retriever
 from app.rag.retrievers.vector_retriever import get_vector_retriever
 from app.rag.reranker.llm_reranker import get_reranker
-from app.rag.query_processor.query_rewrite import get_query_rewriter
+from app.rag.query_processor.query_rewrite import get_query_rewriter, should_rewrite
 
 EVAL_DIR = Path(__file__).parent
 DATASET_PATH = EVAL_DIR / "qa_dataset.json"
@@ -40,7 +40,11 @@ REFUSAL_PATTERNS = [
     "未找到与您问题相关的信息",
 ]
 
-RETRIEVAL_CONFIGS = ["bm25", "dense", "hybrid", "hybrid_rerank", "hybrid_rerank_rewrite"]
+RETRIEVAL_CONFIGS = [
+    "bm25", "dense", "hybrid", "hybrid_rrf",
+    "hybrid_rerank", "hybrid_rrf_rerank",
+    "hybrid_rerank_rewrite", "hybrid_rerank_conditional_rewrite",
+]
 
 
 # ---------- 数据集与黄金命中 ----------
@@ -131,23 +135,38 @@ def retrieve(config: str, question: str, history: list, security_level: int,
         results = [c for c in results if c.get("document_id") in visible_ids]
         return results[:top_k]
 
-    if config == "hybrid":
-        results = hybrid.search(question, top_k=top_k, security_level=security_level)
+    if config in ("hybrid", "hybrid_rrf"):
+        strategy = "rrf" if config == "hybrid_rrf" else "weighted"
+        results = hybrid.search(
+            question, top_k=top_k, security_level=security_level,
+            fusion_strategy=strategy,
+        )
         results = [c for c in results if c.get("document_id") in visible_ids]
         return results[:top_k]
 
-    if config == "hybrid_rerank":
-        candidates = hybrid.search(question, top_k=20, security_level=security_level)
+    if config in ("hybrid_rerank", "hybrid_rrf_rerank"):
+        strategy = "rrf" if config == "hybrid_rrf_rerank" else "weighted"
+        candidates = hybrid.search(
+            question, top_k=20, security_level=security_level,
+            fusion_strategy=strategy,
+        )
         candidates = [c for c in candidates if c.get("document_id") in visible_ids]
         return reranker.rerank(question, candidates)[:top_k]
 
-    if config == "hybrid_rerank_rewrite":
-        rewrite = rewriter.rewrite(question, chat_history=history)
-        queries = [rewrite.get("rewritten", question)] + rewrite.get("variants", [])
-        queries = [q for q in queries if q]
-        candidates = _merge_by_chunk_id(
-            [hybrid.search(q, top_k=20, security_level=security_level) for q in queries]
+    if config in ("hybrid_rerank_rewrite", "hybrid_rerank_conditional_rewrite"):
+        do_rewrite = (
+            config == "hybrid_rerank_rewrite"
+            or should_rewrite(question, history)
         )
+        if do_rewrite:
+            rewrite = rewriter.rewrite(question, chat_history=history)
+            queries = [rewrite.get("rewritten", question)] + rewrite.get("variants", [])
+            queries = [q for q in queries if q]
+            candidates = _merge_by_chunk_id(
+                [hybrid.search(q, top_k=20, security_level=security_level) for q in queries]
+            )
+        else:
+            candidates = hybrid.search(question, top_k=20, security_level=security_level)
         candidates = [c for c in candidates if c.get("document_id") in visible_ids]
         return reranker.rerank(question, candidates)[:top_k]
 
@@ -178,9 +197,9 @@ def run_retrieval_eval(items: list, configs: list, security_level: int) -> dict:
         else:
             vector = get_vector_retriever()
             hybrid = get_hybrid_retriever()
-    if "hybrid_rerank" in configs or "hybrid_rerank_rewrite" in configs:
+    if any("rerank" in c for c in configs):
         reranker = get_reranker()
-    if "hybrid_rerank_rewrite" in configs:
+    if any("rewrite" in c for c in configs):
         rewriter = get_query_rewriter()
 
     results = {}
@@ -243,14 +262,25 @@ def run_retrieval_eval(items: list, configs: list, security_level: int) -> dict:
 
 # ---------- 端到端评测 ----------
 
-CITATION_RE = re.compile(r"《([^》]+)》第?([一二三四五六七八九十百]+)条")
+DOC_TITLE_RE = re.compile(r"《([^》]+)》")
+# 同一文档在语料中存在“原始标题”与“原始标题 - ESP32 - … 编程指南文档”两种副本
+DOC_VARIANT_RE = re.compile(r"\s+-\s+ESP32(?:-[A-Z0-9]+)?\s*-\s+.*$")
 
 
-def extract_citations(text: str) -> set:
-    """提取答案中的法条引用，如 《劳动合同法》第四十七条"""
-    refs = set()
-    for m in CITATION_RE.finditer(text):
-        refs.add(f"《{m.group(1)}》第{m.group(2)}条")
+def canonical_doc_name(name: str) -> str:
+    """把重复副本标题归一化为原始文档名"""
+    return DOC_VARIANT_RE.sub("", (name or "").strip()).strip()
+
+
+def extract_citations(text: str, source_names: set = None) -> set:
+    """提取答案实际引用的文档名（已归一化）。
+
+    线上回答用 [来源N] 标注，并在末尾列出文档名，因此以检索返回的
+    sources 文档名为准；同时兼容答案正文直接写出《文档名》的情况。
+    """
+    refs = {canonical_doc_name(n) for n in (source_names or set())}
+    refs.update(canonical_doc_name(m.group(1)) for m in DOC_TITLE_RE.finditer(text or ""))
+    refs.discard("")
     return refs
 
 
@@ -259,7 +289,7 @@ def llm_judge(question: str, standard_answer: str, answer: str) -> int:
     from app.rag.llm.dashscope_llm import get_llm
     llm = get_llm()
     prompt = (
-        "你是劳动法问答评测员。请对照标准答案给系统回答打分。\n"
+        "你是嵌入式开发教学问答评测员。请对照标准答案给系统回答打分。\n"
         "评分标准：2分=结论正确且依据完整；1分=结论正确但依据不完整或存在小瑕疵；0分=结论错误、无关或未回答。\n"
         f"【问题】{question}\n"
         f"【标准答案】{standard_answer}\n"
@@ -277,6 +307,10 @@ def llm_judge(question: str, standard_answer: str, answer: str) -> int:
 def run_e2e(items: list, security_level: int, sample_size: int = 0) -> dict:
     """端到端评测：调用线上 chat_service.ask，含答案判分、引用正确率、拒答统计"""
     from app.services.chat_service import get_chat_service
+    from app.db.cache import cache
+
+    # 清空问答缓存：确保测得的答案与延迟反映真实链路，而不是历史缓存
+    cache.clear_by_prefix("qa")
     service = get_chat_service()
 
     candidates = [it for it in items if not it["expect_refusal"]]
@@ -285,7 +319,9 @@ def run_e2e(items: list, security_level: int, sample_size: int = 0) -> dict:
         candidates = candidates[:sample_size]
 
     scores = []
+    per_item = []
     cite_exact = cite_partial = cite_total = 0
+    cite_precision_sum = cite_recall_sum = 0.0
     latencies = []
     correct_refusals = 0
     mis_refusals = 0
@@ -299,22 +335,37 @@ def run_e2e(items: list, security_level: int, sample_size: int = 0) -> dict:
         except Exception as e:
             print(f"    [失败] {it['id']}: {e}")
             continue
-        latencies.append(result.get("latency", {}).get("total_ms", 0))
+        latency_ms = result.get("latency", {}).get("total_ms", 0)
+        latencies.append(latency_ms)
         answer = result.get("answer", "")
         score = llm_judge(it["question"], it["standard_answer"], answer)
         scores.append(score)
 
         if any(p in answer for p in REFUSAL_PATTERNS):
             mis_refusals += 1
+        cited = set()
         if it["law_refs"]:
             cite_total += 1
-            cited = extract_citations(answer)
-            expected = set(it["law_refs"])
+            source_names = {
+                s.get("document_name") for s in result.get("sources", [])
+                if s.get("document_name")
+            }
+            cited = extract_citations(answer, source_names)
+            expected = {canonical_doc_name(r.strip("《》")) for r in it["law_refs"]}
             if cited == expected:
                 cite_exact += 1
             if cited & expected:
                 cite_partial += 1
-        print(f"    [{it['id']}] judge={score} 引用={sorted(extract_citations(answer))}")
+            if cited:
+                cite_precision_sum += len(cited & expected) / len(cited)
+            if expected:
+                cite_recall_sum += len(cited & expected) / len(expected)
+        per_item.append({
+            "id": it["id"], "category": it["category"], "judge": score,
+            "cited": sorted(cited), "latency_ms": latency_ms,
+            "answer_chars": len(answer), "question": it["question"],
+        })
+        print(f"    [{it['id']}] judge={score} 引用={sorted(cited)}")
 
     for it in refusal_items:
         try:
@@ -326,17 +377,35 @@ def run_e2e(items: list, security_level: int, sample_size: int = 0) -> dict:
             correct_refusals += 1
 
     n = len(scores)
+    by_cat = {}
+    for rec in per_item:
+        st = by_cat.setdefault(rec["category"], {"n": 0, "sum": 0, "correct": 0})
+        st["n"] += 1
+        st["sum"] += rec["judge"]
+        st["correct"] += 1 if rec["judge"] == 2 else 0
+    by_category = {
+        c: {"n": st["n"], "avg_score": round(st["sum"] / st["n"], 3),
+            "correct_rate": round(st["correct"] / st["n"], 3)}
+        for c, st in sorted(by_cat.items())
+    }
+
     e2e = {
         "answer_accuracy_avg": round(sum(scores) / n, 3) if n else 0.0,
         "answer_correct_rate": round(sum(1 for s in scores if s == 2) / n, 3) if n else 0.0,
         "citation_exact": f"{cite_exact}/{cite_total}",
         "citation_partial": f"{cite_partial}/{cite_total}",
+        "citation_precision": round(cite_precision_sum / cite_total, 3) if cite_total else 0.0,
+        "citation_recall": round(cite_recall_sum / cite_total, 3) if cite_total else 0.0,
         "correct_refusal": f"{correct_refusals}/{len(refusal_items)}",
         "mis_refusal_on_normal": f"{mis_refusals}/{n}",
         "avg_latency_ms": round(sum(latencies) / len(latencies), 1) if latencies else 0,
+        "by_category": by_category,
+        "per_item": per_item,
     }
     print("\n  端到端结果:")
     for k, v in e2e.items():
+        if k == "per_item":
+            continue
         print(f"    {k}: {v}")
     return e2e
 

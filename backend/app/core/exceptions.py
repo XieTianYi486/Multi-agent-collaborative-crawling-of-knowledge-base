@@ -76,6 +76,16 @@ class ValidationException(AppException):
         super().__init__(message=message, code=1001, status_code=400)
 
 
+class RateLimitedException(AppException):
+    """请求频率超限（令牌桶限流）"""
+
+    def __init__(self, message: str = "请求过于频繁，请稍后再试", retry_after: int = 1):
+        super().__init__(
+            message=message, code=1003, status_code=429,
+            detail={"retry_after": retry_after},
+        )
+
+
 # ==================== RAG 相关异常 ====================
 
 class DocumentProcessException(AppException):
