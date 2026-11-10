@@ -82,6 +82,16 @@ export const counselorApi = {
     }),
 }
 
+/** AI 助手检索到的可跳转资料（文档 / 视频） */
+export interface CounselorResource {
+  type: 'document' | 'video'
+  id: number
+  title: string
+  subtitle?: string
+  file_type?: string
+  url: string
+}
+
 interface CounselorStreamCallbacks {
   onToken: (token: string) => void
   onSources: (sources: CounselorSource[]) => void
@@ -90,6 +100,7 @@ interface CounselorStreamCallbacks {
     full_answer: string
     mode: string
     sources: CounselorSource[]
+    resources?: CounselorResource[]
     session_id?: string
   }) => void
   onError: (error: string) => void

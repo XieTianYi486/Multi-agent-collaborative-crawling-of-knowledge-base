@@ -13,7 +13,7 @@ import logging
 import traceback as tb_module
 import uuid as uuid_lib
 from types import SimpleNamespace
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -32,6 +32,7 @@ from app.schemas.counselor import (
     CounselorSessionUpdate, CounselorFeedbackRequest,
 )
 from app.services.counselor_service import get_counselor_service
+from app.services.resource_service import search_resources
 from app.services.sensitive_service import SensitiveService
 from app.services.audit_service import add_audit_log
 
@@ -107,6 +108,9 @@ def ask_counselor(
 
     chat_history = _load_history(db, request.session_id)
 
+    # 资料类提问额外返回可跳转的文档/视频条目（普通概念提问返回空）
+    resources = search_resources(db, request.question, security_level)
+
     result = counselor.ask(
         question=request.question, chat_history=chat_history,
         security_level=security_level,
@@ -151,6 +155,7 @@ def ask_counselor(
     return APIResponse(code=0, message="success", data={
         "answer": result["answer"],
         "sources": result.get("sources", []),
+        "resources": resources,
         "mode": result.get("mode"),
         "session_id": session_id,
     })
@@ -189,6 +194,7 @@ async def ask_counselor_stream(
     # 避免向客户端抛出无信息的 HTTP 500
     sensitive_words: List = []
     keep_chars = 0
+    resources: List[Dict] = []
     try:
         blocked = _check_question_sensitive(db, question, current_user)
         session_id = request.session_id or _generate_session_id()
@@ -207,6 +213,9 @@ async def ask_counselor_stream(
             # 滑动窗口回退长度：保留"最长敏感词 - 1"个字符，
             # 保证跨 token 的敏感词完整出现后才替换，不会提前泄露
             keep_chars = max(0, max((len(w.word) for w in sensitive_words), default=0) - 1)
+
+            # 资料类提问附带可跳转条目（须在 db 关闭前查询）
+            resources = search_resources(db, question, security_level)
 
             # 创建/获取会话 + 保存用户消息
             if not request.session_id:
@@ -316,6 +325,7 @@ async def ask_counselor_stream(
 
                     data["full_answer"] = stream_result["full_answer"]
                     data["session_id"] = session_id
+                    data["resources"] = resources
                     stream_result["ok"] = True
                     yield f"event: done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 

@@ -133,6 +133,25 @@
               </span>
               <!-- AI 助手回答是 Markdown（含表格/加粗/分点），需渲染后展示，否则原文符号会直接暴露给用户 -->
               <div class="cp-text" v-html="renderMarkdown(m.content)"></div>
+              <!-- 资料卡片：助手检索到的文档/视频，点击直接跳转到对应页面 -->
+              <div v-if="m.resources && m.resources.length" class="cp-resources">
+                <div class="cp-resources-title">为你找到的资料（点击打开）</div>
+                <button
+                  v-for="r in m.resources"
+                  :key="`${r.type}-${r.id}`"
+                  class="cp-resource"
+                  @click="openResource(r)"
+                >
+                  <span class="cp-resource-icon" :class="r.type">
+                    {{ r.type === 'video' ? '▶' : '文' }}
+                  </span>
+                  <span class="cp-resource-body">
+                    <span class="cp-resource-title">{{ r.title }}</span>
+                    <span v-if="r.subtitle" class="cp-resource-sub">{{ r.subtitle }}</span>
+                  </span>
+                  <span class="cp-resource-arrow">→</span>
+                </button>
+              </div>
               <div v-if="m.sources && m.sources.length" class="cp-sources">
                 <div class="cp-sources-title">参考来源（点击展开原文）</div>
                 <div
@@ -213,7 +232,8 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { Close, Plus, Clock, Delete, Promotion, Refresh, Microphone, CaretBottom } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { counselorApi, counselorStream } from '@/api/counselor'
-import type { CounselorSource, CounselorSession } from '@/api/counselor'
+import type { CounselorSource, CounselorSession, CounselorResource } from '@/api/counselor'
+import { useRouter } from 'vue-router'
 
 // html: false —— 禁止原始 HTML 透传，避免模型输出带标签时触发 XSS
 const md = new MarkdownIt({ breaks: true, linkify: true, html: false })
@@ -249,6 +269,7 @@ interface LocalMessage {
   content: string
   mode?: string | null
   sources?: CounselorSource[] | null
+  resources?: CounselorResource[] | null
 }
 
 const open = ref(false)
@@ -265,6 +286,15 @@ const notice = ref('')
 const errorMsg = ref('')
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+const router = useRouter()
+
+/** 打开资料卡片：跳转到文档页或视频专区，并收起助手面板 */
+function openResource(resource: CounselorResource) {
+  if (!resource?.url) return
+  open.value = false
+  router.push(resource.url)
+}
 
 // ==================== 语音播报（Edge TTS - 分段合成降低延迟） ====================
 const voiceEnabled = ref(true)                               // 是否开启语音
@@ -834,6 +864,7 @@ function send() {
         content: answer,
         mode: result.mode,
         sources: result.sources?.length ? result.sources : pendingSources,
+        resources: result.resources?.length ? result.resources : null,
       })
       streamContent.value = ''
       streaming.value = false
@@ -1298,6 +1329,61 @@ defineExpose({ openPanel })
   border-bottom-left-radius: 4px;
 }
 .cp-text { white-space: normal; }
+
+/* 资料卡片：与项目浅色卡片风格一致 */
+.cp-resources { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.cp-resources-title {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
+}
+.cp-resource {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  transition: border-color 0.16s, background 0.16s;
+}
+.cp-resource:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+.cp-resource-icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #fff;
+  background: var(--color-primary);
+}
+.cp-resource-icon.video { background: var(--color-warning); }
+.cp-resource-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cp-resource-title {
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-resource-sub {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-resource-arrow { flex: 0 0 auto; color: var(--color-primary); font-size: 13px; }
 /* Markdown 渲染后的排版（v-html 内容需 :deep 才能命中 scoped 样式） */
 .cp-text :deep(p) { margin: 0 0 8px; }
 .cp-text :deep(p:last-child) { margin-bottom: 0; }

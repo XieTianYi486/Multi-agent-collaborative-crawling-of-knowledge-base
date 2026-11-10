@@ -375,6 +375,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   Search, FolderOpened, ArrowRight, Document, Grid, Tickets,
     Files, Coin, Link, Star, StarFilled, Clock, Upload, UploadFilled,
@@ -425,6 +426,7 @@ const contentText = ref('')
 const contentError = ref('')
 
 // ==================== 教师投稿 ====================
+const route = useRoute()
 const authStore = useAuthStore()
 const canContribute = computed(() => {
   const role = authStore.user?.role_name || ''
@@ -740,6 +742,11 @@ function openSource() {
 }
 
 onMounted(() => {
+  // 支持从 AI 助手资料卡片跳转过来，带上 keyword 直接检索
+  const queryKeyword = route.query.keyword
+  if (typeof queryKeyword === 'string' && queryKeyword.trim()) {
+    keyword.value = queryKeyword.trim()
+  }
   loadStats()
   loadCategories()
   loadDocuments()

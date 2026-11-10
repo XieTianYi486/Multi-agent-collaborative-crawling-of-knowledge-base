@@ -190,10 +190,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { Search, VideoPlay, User, View, Clock, Link } from '@element-plus/icons-vue'
 import { videoApi, type VideoItem } from '@/api/video'
 
 const loading = ref(false)
+const route = useRoute()
 const keyword = ref('')
 const category = ref('')
 const difficulty = ref('')
@@ -288,6 +290,11 @@ function openPlayer(video: VideoItem) {
 }
 
 onMounted(() => {
+  // 支持从 AI 助手资料卡片跳转过来，带上 keyword 直接检索
+  const queryKeyword = route.query.keyword
+  if (typeof queryKeyword === 'string' && queryKeyword.trim()) {
+    keyword.value = queryKeyword.trim()
+  }
   loadCategories()
   loadVideos()
 })
