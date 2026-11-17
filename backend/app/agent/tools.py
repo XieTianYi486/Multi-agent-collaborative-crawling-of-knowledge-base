@@ -9,7 +9,7 @@
 #   {"ok": bool, "summary": str, "data": dict, "sources"?: list, "resources"?: list}
 # ============================================================
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 import re
 from collections import Counter
@@ -74,6 +74,10 @@ def _age_days(moment: Optional[datetime]) -> int:
     """距今等待天数（用于判断积压时长）"""
     if moment is None:
         return 0
+    # SQLite 取出的时间为 naive（时区信息丢失），utcnow() 是 aware，
+    # 直接相减会抛 TypeError：统一补回 UTC 再计算
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
     return max(0, (utcnow() - moment).days)
 
 

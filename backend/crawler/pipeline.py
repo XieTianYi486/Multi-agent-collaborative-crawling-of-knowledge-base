@@ -125,10 +125,15 @@ def _step_discover(ctx: dict) -> None:
         query = db.query(CollectionRequest).filter(CollectionRequest.status == 1)
         if request_ids:
             query = query.filter(CollectionRequest.id.in_(request_ids))
-        targets = [(r.id, r.question) for r in query.order_by(CollectionRequest.id).limit(3).all()]
+        rows = query.order_by(CollectionRequest.id).limit(3).all()
+        targets = [(r.id, r.question) for r in rows]
+        # 全部开放需求都传给 targeted：只允许这些需求的历史失败候选复活重试
+        open_ids = [r.id for r in db.query(CollectionRequest.id)
+                    .filter(CollectionRequest.status == 1).all()]
     finally:
         db.close()
 
+    ctx["open_request_ids"] = open_ids
     if not targets:
         return
 
@@ -148,7 +153,10 @@ def _step_discover(ctx: dict) -> None:
 
 
 def _step_targeted(ctx: dict) -> None:
-    stats = run_targeted(limit=int(ctx.get("target_limit", 8)))
+    stats = run_targeted(
+        limit=int(ctx.get("target_limit", 8)),
+        open_request_ids=ctx.get("open_request_ids"),
+    )
     ctx["targeted"] = stats
 
 

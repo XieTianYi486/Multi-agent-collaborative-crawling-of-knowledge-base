@@ -7,8 +7,10 @@
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
+import socket
 import time
 from urllib.parse import urlsplit
 
@@ -22,7 +24,6 @@ from . import robots
 from .adapters.base import RawItem
 from .adapters.known import page_title
 from .crawl import ingest_item
-from .dedup import url_hash
 from .politeness import is_circuit_open, record_site_failure, record_site_success, wait_before_request
 from ..store import repo
 
@@ -46,8 +47,17 @@ class TargetedStats:
         self.skipped = 0
 
 
-def run_targeted(limit: int = 8) -> TargetedStats:
-    """抓取队列中分数最高的 limit 个候选 URL。"""
+def run_targeted(
+    limit: int = 8,
+    open_request_ids: Optional[list[int]] = None,
+) -> TargetedStats:
+    """
+    抓取队列中分数最高的 limit 个候选 URL。
+
+    open_request_ids：仍处于开放状态（status=1）的补采需求。
+    仅这些需求的历史失败候选允许复活重试——已关闭需求不再浪费抓取额度，
+    避免"上一轮失败的 URL 永久死路"与"已忽略需求还占额度"两个极端。
+    """
     stats = TargetedStats()
     settings = get_settings()
     with httpx.Client(
@@ -63,6 +73,25 @@ def run_targeted(limit: int = 8) -> TargetedStats:
                 .limit(limit)
                 .all()
             )
+            if len(rows) < limit and open_request_ids:
+                # 新鲜队列不足时，复活开放需求上一轮的失败候选（transient 故障重试）
+                remaining = limit - len(rows)
+                failed = (
+                    session.query(DiscoveryQueue)
+                    .filter(
+                        DiscoveryQueue.status == "failed",
+                        DiscoveryQueue.request_id.in_(open_request_ids),
+                    )
+                    .order_by(DiscoveryQueue.score.desc(), DiscoveryQueue.id)
+                    .limit(remaining)
+                    .all()
+                )
+                for row in failed:
+                    row.status = "queued"
+                    row.error = None
+                    row.fetched_at = None
+                    rows.append(row)
+                session.flush()
             for row in rows:
                 _fetch_one(session, http, row, stats)
     log.info(
@@ -73,19 +102,25 @@ def run_targeted(limit: int = 8) -> TargetedStats:
 
 
 def _fetch_one(session, http: httpx.Client, row: DiscoveryQueue, stats: TargetedStats) -> None:
-    if not robots.is_allowed(http, row.url):
+    def _skip(reason: str) -> None:
         row.status = "skipped"
-        row.error = "robots.txt 禁止抓取"
+        row.error = reason
         row.fetched_at = utcnow()
         stats.skipped += 1
+
+    # 公网地址校验先于 robots：内网/云元数据地址连 robots.txt 请求都不应发出
+    host = urlsplit(row.url).hostname or ""
+    if not _is_public_host(host):
+        _skip("目标地址不是公网地址（防内网/云元数据探测）")
+        return
+
+    if not robots.is_allowed(http, row.url):
+        _skip("robots.txt 禁止抓取")
         return
 
     site = _ensure_site(session, row.url)
     if is_circuit_open(site):
-        row.status = "skipped"
-        row.error = "域名熔断中"
-        row.fetched_at = utcnow()
-        stats.skipped += 1
+        _skip("域名熔断中")
         return
 
     try:
@@ -116,17 +151,36 @@ def _fetch_one(session, http: httpx.Client, row: DiscoveryQueue, stats: Targeted
         return
     record_site_success(site)
 
+    # 重定向后复检：目的地换主机时重新校验公网地址、robots 与站点归属，
+    # 防止低风险源跳转到内网地址或未经授权的高风险站点
+    final_host = urlsplit(str(resp.url)).hostname or ""
+    if final_host and final_host != host:
+        if not _is_public_host(final_host):
+            _skip("重定向到非公网地址，已拦截")
+            return
+        if not robots.is_allowed(http, str(resp.url)):
+            _skip("重定向目标被 robots.txt 禁止")
+            return
+        site = _ensure_site(session, str(resp.url))
+
     item = RawItem(
         url=str(resp.url),
         title=page_title(resp.text) or row.title,
         content_html=resp.text,
     )
     try:
-        doc = ingest_item(session, site, item)
+        # return_existing=True：URL/内容哈希/SimHash 重复时返回库中已有文档，
+        # 让队列行关联到既有文档——补采需求靠 kb_syncs 闭环，重复内容同样算覆盖
+        doc = ingest_item(session, site, item, return_existing=True)
         session.flush()
-        if doc is None:  # URL/内容重复：复用已有文档，保证需求仍能闭环
-            doc = repo.find_document_by_url_hash(session, url_hash(item.url))
-        elif not (doc.text or "").strip():
+        if doc is None:
+            # 无实质内容：不入库
+            row.status = "skipped"
+            row.error = "无实质内容"
+            row.fetched_at = utcnow()
+            stats.skipped += 1
+            return
+        if not (doc.text or "").strip():
             # 正文抽取失败（只剩标题）不能算补采成功，避免把空文档写进知识库
             session.delete(doc)
             row.status = "skipped"
@@ -145,8 +199,9 @@ def _fetch_one(session, http: httpx.Client, row: DiscoveryQueue, stats: Targeted
     row.status = "fetched"
     row.fetched_at = utcnow()
     stats.fetched += 1
-    if doc is not None:
-        row.doc_id = doc.id
+    row.doc_id = doc.id
+    # 只有本轮新建的文档计入新增（doc in session.new 表示尚未持久化的新对象）
+    if doc in session.new:
         stats.new_docs += 1
 
 
@@ -180,3 +235,27 @@ def _ensure_site(session, url: str) -> Site:
         note="由补采侦察 Agent 自动发现；未备案来源仅保留节选与原文链接",
     ))
     return site
+
+
+def _is_public_host(host: str) -> bool:
+    """解析主机名并确认全部地址都是公网地址（防 SSRF / 内网 / 云元数据探测）。
+
+    ipaddress.is_global 会把回环、私网（10/8、172.16/12、192.168/16）、
+    链路本地（169.254/16）、保留段全部判为非公网。解析失败按不安全处理。
+    """
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if not ip.is_global:
+            return False
+    return True

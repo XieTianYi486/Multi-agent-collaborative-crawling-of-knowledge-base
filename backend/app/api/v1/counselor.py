@@ -448,10 +448,8 @@ def confirm_counselor_action(
     模型只能"提议"，真正执行必须由用户点击确认并携带短时令牌调用本接口。
     令牌绑定用户、工具名与参数，5 分钟过期且只能消费一次。
     """
-    payload = consume_action_token(request.action_token)
-
-    if str(payload.get("sub")) != str(current_user.id):
-        raise ValidationException("无权执行该操作")
+    # 先校验归属再消费：不是本人的令牌直接拒绝，避免把别人的令牌烧掉
+    payload = consume_action_token(request.action_token, expected_user_id=current_user.id)
 
     tool_name = payload.get("tool") or ""
     registry = get_tool_registry()

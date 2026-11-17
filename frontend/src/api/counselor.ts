@@ -172,6 +172,7 @@ export function counselorStream(
       const decoder = new TextDecoder()
       let buffer = ''
       let currentEvent = ''
+      let terminalSeen = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -208,9 +209,11 @@ export function counselorStream(
                   cb.onSensitive?.(parsed.full_answer, parsed.hits || [])
                   break
                 case 'done':
+                  terminalSeen = true
                   cb.onDone(parsed)
                   break
                 case 'error':
+                  terminalSeen = true
                   cb.onError(parsed.message || '未知错误')
                   break
               }
@@ -219,6 +222,12 @@ export function counselorStream(
             }
           }
         }
+      }
+
+      // 连接被代理/超时截断等场景：流正常结束但没有 done/error，
+      // 必须主动收尾，否则前端会永远停在"生成中"
+      if (!terminalSeen) {
+        cb.onError('连接中断，回答未完整返回，请重试')
       }
     })
     .catch((err) => {

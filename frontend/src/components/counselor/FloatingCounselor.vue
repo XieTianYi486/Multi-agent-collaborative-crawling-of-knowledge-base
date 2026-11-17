@@ -351,6 +351,8 @@ const router = useRouter()
 function openResource(resource: CounselorResource) {
   if (!resource?.url) return
   open.value = false
+  stopSpeak()
+  if (streaming.value) stop()
   router.push(resource.url)
 }
 
@@ -405,6 +407,8 @@ let currentAudio: HTMLAudioElement | null = null
 let segmentQueue: string[] = []          // 待播放的文本分段
 let segmentIndex = 0                     // 当前播放到第几段
 let cancelled = false                    // 是否被取消（stopSpeak）
+let speakGeneration = 0                  // 朗读代数：每次 stopSpeak 递增，旧循环据此失效
+let resolvePlayback: (() => void) | null = null // 当前段播放的完成回调（stopSpeak 时提前释放）
 
 // Edge TTS 音色列表（从后端获取）
 interface EdgeVoice {
@@ -461,7 +465,19 @@ function splitText(text: string): string[] {
   return segments.length ? segments : [text]
 }
 
-// 请求单段音频，返回 blob url
+// 请求单段音频，返回 blob url（统一登记，便于取消时释放，避免内存泄漏）
+const blobUrls = new Set<string>()
+
+function trackBlob(url: string): string {
+  blobUrls.add(url)
+  return url
+}
+
+function releaseBlob(url: string) {
+  blobUrls.delete(url)
+  URL.revokeObjectURL(url)
+}
+
 async function fetchSegmentAudio(segment: string): Promise<string> {
   const token = localStorage.getItem('access_token')
   const url = `/api/v1/counselor/tts?text=${encodeURIComponent(segment)}&voice=${encodeURIComponent(selectedVoice.value)}`
@@ -470,20 +486,21 @@ async function fetchSegmentAudio(segment: string): Promise<string> {
   })
   if (!res.ok) throw new Error(`TTS 请求失败: ${res.status}`)
   const blob = await res.blob()
-  return URL.createObjectURL(blob)
+  return trackBlob(URL.createObjectURL(blob))
 }
 
 // 播放分段队列：当前段播放时，后台预取下一段
-async function playSegments(segments: string[]) {
+// gen 为本次朗读的代数：stopSpeak 会让代数 +1，旧循环在任意 await 后
+// 发现自己已过期就立即退出，避免"旧语音在新语音开始后复活"的重叠播放
+async function playSegments(segments: string[], gen: number) {
   segmentQueue = segments
   segmentIndex = 0
-  cancelled = false
   speaking.value = true
 
   let nextAudioUrl: string | null = null
 
   for (let i = 0; i < segments.length; i++) {
-    if (cancelled) break
+    if (cancelled || gen !== speakGeneration) break
     segmentIndex = i
 
     let audioUrl: string
@@ -507,19 +524,16 @@ async function playSegments(segments: string[]) {
 
     // 播放当前段
     await new Promise<void>((resolve) => {
-      if (cancelled) { resolve(); return }
+      if (cancelled || gen !== speakGeneration) { resolve(); return }
       const audio = new Audio(audioUrl)
       currentAudio = audio
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl)
+      resolvePlayback = () => {
+        releaseBlob(audioUrl)
         currentAudio = null
         resolve()
       }
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl)
-        currentAudio = null
-        resolve()
-      }
+      audio.onended = resolvePlayback
+      audio.onerror = resolvePlayback
       audio.play().catch(() => resolve())
     })
 
@@ -527,7 +541,7 @@ async function playSegments(segments: string[]) {
     if (prefetchPromise) await prefetchPromise.catch(() => {})
   }
 
-  if (!cancelled) {
+  if (!cancelled && gen === speakGeneration) {
     speaking.value = false
   }
   currentAudio = null
@@ -535,17 +549,23 @@ async function playSegments(segments: string[]) {
 
 function stopSpeak() {
   cancelled = true
+  speakGeneration++
   segmentQueue = []
+  resolvePlayback?.()
+  resolvePlayback = null
   if (currentAudio) {
     currentAudio.pause()
     currentAudio.currentTime = 0
     currentAudio = null
   }
+  // 释放所有未播放的 blob（含旧循环预取的下一段）
+  for (const url of [...blobUrls]) releaseBlob(url)
   speaking.value = false
 }
 
 async function speak(text: string) {
   stopSpeak()
+  cancelled = false // 新循环开始
   if (!voiceEnabled.value || !text) return
   // 去掉 markdown 标记和超长文本，只朗读前 500 字
   const clean = text.replace(/```[\s\S]*?```/g, ' ').replace(/[#*`>\-]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -554,7 +574,7 @@ async function speak(text: string) {
 
   // 按标点切分成短句，逐段合成播放，降低首音延迟
   const segments = splitText(toRead)
-  playSegments(segments)
+  playSegments(segments, speakGeneration)
 }
 
 function toggleVoice() {
@@ -717,8 +737,9 @@ function onFabClick() {
 }
 
 function onHeadDown(e: PointerEvent) {
-  // 头部右侧的操作按钮不触发拖动
-  if ((e.target as HTMLElement).closest('.cp-icon-btn')) return
+  // 头部右侧的操作按钮与音色选择菜单不触发拖动：
+  // 指针捕获会把 click 重定向到把手元素，菜单项永远点不中
+  if ((e.target as HTMLElement).closest('.cp-icon-btn, .cp-voice-menu')) return
   startDrag(e, 'panel')
 }
 
@@ -765,6 +786,10 @@ onUnmounted(() => {
   window.visualViewport?.removeEventListener('scroll', syncKeyboardOffset)
   document.removeEventListener('click', closeVoiceMenu)
   document.body.classList.remove('cp-dragging')
+  // 跳转到 /help 等页面会卸载本组件：未完成的流必须中止，否则回答到达后
+  // 还会在新页面朗读、会话状态悬空
+  controller?.abort()
+  streaming.value = false
   stopSpeak()
 })
 
@@ -914,6 +939,7 @@ function closePanel() {
   open.value = false
   showHistory.value = false
   stopSpeak()
+  if (streaming.value) stop()
 }
 
 function toggleHistory() {
@@ -1074,8 +1100,8 @@ function send() {
       streaming.value = false
       loadSessions()
       scrollToBottom()
-      // 朗读回复内容
-      speak(answer)
+      // 朗读回复内容（面板已收起/组件即将卸载时不朗读，避免声音跑到其他页面）
+      if (open.value) speak(answer)
     },
     onError: (err) => {
       streaming.value = false

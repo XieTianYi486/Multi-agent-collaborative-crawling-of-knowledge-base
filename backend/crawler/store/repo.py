@@ -139,16 +139,40 @@ def unsummarized_documents(session: Session, limit: int = 500) -> list[Document]
 
 
 def unsynced_documents(session: Session, limit: int = 100) -> list[Document]:
-    """尚未同步到知识库主库的文档，按 id 升序取前 N 篇（含站点信息）。"""
-    synced = select(KnowledgeBaseSync.doc_id)
-    return (
+    """
+    待同步文档，按 id 升序取前 N 篇（含站点信息）。
+
+    只有 ok/skipped 视为终态；failed 的文档会在下一轮重试
+    （临时故障如 embedding 不可用不应永久丢失文档）。
+    优先级：从未同步过的文档优先，剩余配额再给 failed 重试，
+    避免一个永久失败的文档长期占满每日限额饿死新文档。
+    """
+    done = select(KnowledgeBaseSync.doc_id).where(
+        KnowledgeBaseSync.status.in_(("ok", "skipped"))
+    )
+    attempted = select(KnowledgeBaseSync.doc_id)
+    fresh = (
         session.query(Document)
         .options(selectinload(Document.site))
-        .filter(~Document.id.in_(synced))
+        .filter(~Document.id.in_(attempted))
         .order_by(Document.id)
         .limit(limit)
         .all()
     )
+    if len(fresh) >= limit:
+        return fresh
+    failed = select(KnowledgeBaseSync.doc_id).where(
+        KnowledgeBaseSync.status == "failed"
+    )
+    retry = (
+        session.query(Document)
+        .options(selectinload(Document.site))
+        .filter(Document.id.in_(failed), ~Document.id.in_(done))
+        .order_by(Document.id)
+        .limit(limit - len(fresh))
+        .all()
+    )
+    return fresh + retry
 
 
 def mark_kb_synced(
@@ -160,7 +184,20 @@ def mark_kb_synced(
     status: str = "ok",
     error: str = "",
 ) -> None:
-    """记录一篇文档已同步到知识库（幂等，按 doc_id 唯一索引）。"""
+    """记录一篇文档的同步结果（幂等：失败重试时更新原行，不重复插入）。"""
+    row = (
+        session.query(KnowledgeBaseSync)
+        .filter(KnowledgeBaseSync.doc_id == doc_id)
+        .first()
+    )
+    if row is not None:
+        if kb_doc_id is not None:
+            row.kb_doc_id = kb_doc_id
+        if title:
+            row.title = title[:512]
+        row.status = status
+        row.error = error[:1000]
+        return
     session.add(KnowledgeBaseSync(
         doc_id=doc_id, kb_doc_id=kb_doc_id, title=title[:512],
         status=status, error=error[:1000],

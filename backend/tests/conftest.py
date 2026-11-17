@@ -47,6 +47,7 @@ import app.models.teaching  # noqa: E402, F401
 import app.models.counselor  # noqa: E402, F401
 import app.models.announcement  # noqa: E402, F401
 import app.models.api_client  # noqa: E402, F401
+import app.models.agent_action  # noqa: E402, F401
 
 from app.db.sqlite import init_db, engine, SessionLocal  # noqa: E402
 

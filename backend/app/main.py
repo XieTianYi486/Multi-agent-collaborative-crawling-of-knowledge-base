@@ -27,6 +27,7 @@ import app.models.counselor   # noqa: F401
 import app.models.collection  # noqa: F401
 import app.models.video       # noqa: F401
 import app.models.teaching    # noqa: F401
+import app.models.agent_action  # noqa: F401
 
 from app.models.user import Role, User
 from app.core.security import hash_password

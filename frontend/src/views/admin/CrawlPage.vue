@@ -29,7 +29,7 @@
           <div class="stat-info">
             <div class="stat-label">知识库文档</div>
             <div class="stat-value">{{ formatNum(kb.documents) }}</div>
-            <div class="stat-sub">已发布 {{ formatNum(kb.published) }} 篇 · 今日新增 {{ kb.documents_today }} 篇</div>
+            <div class="stat-sub">已发布 {{ formatNum(kb.published) }} 篇 · 待审核 {{ formatNum(kb.pending_review) }} 篇 · 今日新增 {{ kb.documents_today }} 篇</div>
           </div>
         </div>
       </el-col>
@@ -219,9 +219,16 @@
             </el-table-column>
             <el-table-column label="知识库状态" width="100" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.kb_doc" :type="row.kb_doc.status === 1 ? 'success' : 'info'" size="small" effect="plain">
-                  {{ row.kb_doc.status === 1 ? '可检索' : '未发布' }}
-                </el-tag>
+                <!-- 可检索口径与后端一致：处理完成 + 已通过审核（review_status=2） -->
+                <el-tag
+                  v-if="row.kb_doc && row.kb_doc.status === 1 && row.kb_doc.review_status === 2"
+                  type="success" size="small" effect="plain"
+                >可检索</el-tag>
+                <el-tag
+                  v-else-if="row.kb_doc && row.kb_doc.status === 1 && row.kb_doc.review_status === 1"
+                  type="warning" size="small" effect="plain"
+                >待审核</el-tag>
+                <el-tag v-else-if="row.kb_doc" type="info" size="small" effect="plain">未发布</el-tag>
                 <span v-else class="text-muted">—</span>
               </template>
             </el-table-column>

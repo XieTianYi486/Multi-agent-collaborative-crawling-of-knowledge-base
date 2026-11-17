@@ -180,7 +180,7 @@
 ### 环境要求
 
 - **Python** 3.9+（开发机实测 3.9.1）
-- **Node.js** 18+
+- **Node.js** 20.19+（Vite 8 要求；22.12+ 亦可）
 - **阿里云百炼 API Key**（[免费申请](https://bailian.console.aliyun.com/)）
 
 ### 1. 克隆项目

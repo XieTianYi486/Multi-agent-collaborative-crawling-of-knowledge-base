@@ -253,3 +253,92 @@ class TestCollectionTool:
         assert second["ok"] is True
         assert second["data"]["duplicated"] is True
         assert second["data"]["id"] == first["data"]["id"]
+
+
+class TestActionToken:
+    """写操作确认令牌：参数不进入 JWT、一次性消费、防伪造"""
+
+    def _ctx(self):
+        return ToolContext(
+            user_id=9998, username="tester", role_code="student", security_level=1,
+            session_id="csess_test",
+        )
+
+    def test_long_chinese_args_keep_token_small(self, db):
+        """500 字中文参数也不应撑爆 4000 字符接口上限"""
+        from app.agent.actions import create_action_token
+
+        question = "帮我提交补采：" + "ESP32 蓝牙配网失败怎么办？" * 40
+        token = create_action_token(
+            self._ctx(), "submit_collection_request", {"question": question}
+        )
+        assert len(token) < 2000, f"token 过长: {len(token)}"
+
+    def test_consume_once_and_replay_rejected(self, db):
+        from app.agent.actions import consume_action_token, create_action_token
+        from app.core.exceptions import ValidationException
+
+        question = f"测试确认令牌_{uuid.uuid4().hex}"
+        ctx = self._ctx()
+        token = create_action_token(
+            ctx, "submit_collection_request", {"question": question},
+            session_id=ctx.session_id,
+        )
+
+        payload = consume_action_token(token)
+        assert payload["sub"] == "9998"
+        assert payload["tool"] == "submit_collection_request"
+        assert payload["args"]["question"] == question
+        assert payload["sid"] == "csess_test"
+
+        # 重放（含跨"重启"语义：状态在数据库而非进程内存）
+        with pytest.raises(ValidationException, match="已执行"):
+            consume_action_token(token)
+
+    def test_wrong_user_rejected_without_burning(self, db):
+        """他人令牌被拒，且令牌不被消费（归属校验先于消费）"""
+        from app.agent.actions import consume_action_token, create_action_token
+        from app.core.exceptions import ValidationException
+
+        token = create_action_token(self._ctx(), "create_ticket", {"title": "x"})
+        with pytest.raises(ValidationException, match="无权"):
+            consume_action_token(token, expected_user_id=7777)
+        # 令牌未被烧毁，本人仍可正常消费
+        payload = consume_action_token(token, expected_user_id=9998)
+        assert payload["tool"] == "create_ticket"
+
+    def test_unknown_jti_rejected(self, db):
+        import json as _json
+
+        from app.agent.actions import consume_action_token
+        from app.core.exceptions import ValidationException
+        from app.core.security import create_access_token
+
+        token = create_access_token(
+            subject="9998",
+            extra_claims={"typ": "agent_action", "jti": uuid.uuid4().hex},
+        )
+        with pytest.raises(ValidationException, match="过期"):
+            consume_action_token(token)
+
+    def test_expired_row_rejected(self, db):
+        from datetime import timedelta
+
+        from app.agent.actions import consume_action_token, create_action_token
+        from app.core.exceptions import ValidationException
+        from app.db.sqlite import SessionLocal
+        from app.models.agent_action import AgentActionToken
+        from app.models.user import utcnow
+
+        token = create_action_token(self._ctx(), "create_ticket", {"title": "x"})
+        # 直接把库内过期时间改到过去，模拟 5 分钟过期
+        s = SessionLocal()
+        row = s.query(AgentActionToken).order_by(
+            AgentActionToken.created_at.desc()
+        ).first()
+        row.expires_at = utcnow() - timedelta(seconds=1)
+        s.commit()
+        s.close()
+
+        with pytest.raises(ValidationException, match="过期"):
+            consume_action_token(token)

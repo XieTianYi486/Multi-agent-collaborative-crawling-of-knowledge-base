@@ -124,8 +124,20 @@ def discover(session, request_id: int, question: str, limit: int = 8) -> int:
             break
         if c.score <= 0:  # 与本问题无关的误命中不入队
             continue
-        exists = session.query(DiscoveryQueue.id).filter(DiscoveryQueue.url == c.url).first()
-        if exists:
+        existing = (
+            session.query(DiscoveryQueue)
+            .filter(DiscoveryQueue.url == c.url[:1024])
+            .first()
+        )
+        if existing is not None:
+            # URL 全局唯一：历史上失败的候选允许"重挂"到新需求上重试，
+            # 否则 transient 故障（GitHub 429 / 熔断）会让该 URL 永远死路
+            if existing.status in ("failed", "skipped"):
+                existing.request_id = request_id
+                existing.status = "queued"
+                existing.error = None
+                existing.fetched_at = None
+                queued += 1
             continue
         session.add(DiscoveryQueue(
             request_id=request_id,
@@ -136,6 +148,31 @@ def discover(session, request_id: int, question: str, limit: int = 8) -> int:
             score=c.score,
         ))
         queued += 1
+
+    if queued == 0:
+        # 哨兵行：本轮确实侦察过该需求但没有可入队的候选。
+        # 没有它的话，resolve 无法区分"候选全被去重（应留到下一轮）"和
+        # "确实没搜到（应标记未匹配）"——区分不出来就只能永久空转或永久误杀。
+        sentinel_url = f"none://{request_id}"
+        sentinel = (
+            session.query(DiscoveryQueue)
+            .filter(DiscoveryQueue.url == sentinel_url)
+            .first()
+        )
+        if sentinel is None:
+            session.add(DiscoveryQueue(
+                request_id=request_id,
+                channel="scout",
+                url=sentinel_url,
+                title="本轮未检索到可用候选",
+                snippet="",
+                score=0,
+                status="skipped",
+            ))
+        else:
+            # 需求重试多轮仍未出结果：复用哨兵行（url 唯一约束）
+            sentinel.status = "skipped"
+            sentinel.title = "本轮未检索到可用候选"
     session.flush()
     log.info("补采需求 #%d 侦察完成：检索 %d 条，入队 %d 条", request_id, len(unique), queued)
     return queued

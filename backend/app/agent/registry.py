@@ -24,13 +24,17 @@ RISK_WRITE = "write"
 ALL_ROLES: FrozenSet[str] = frozenset({
     "super_admin", "knowledge_admin", "dept_admin", "employee", "teacher", "student",
 })
-# 可查看班级/学生的角色
+# 可查看班级/学生的角色。
+# 与教学 REST API（app/api/v1/teaching.py 的 ADMIN_ROLES）严格对齐：
+# dept_admin 在 REST 层被明确拒绝查看班级学生，助手工具必须保持一致，
+# 否则助手会成为绕过接口权限的旁路。
 TEACHER_VIEW_ROLES: FrozenSet[str] = frozenset({
-    "teacher", "dept_admin", "super_admin", "knowledge_admin",
+    "teacher", "super_admin", "knowledge_admin",
 })
-# 可使用运营/管理类工具的角色
+# 可使用运营/管理类工具的角色。
+# 与 REST 管理接口（require_knowledge_admin = super_admin/knowledge_admin）严格对齐。
 ADMIN_ROLES: FrozenSet[str] = frozenset({
-    "super_admin", "knowledge_admin", "dept_admin",
+    "super_admin", "knowledge_admin",
 })
 
 

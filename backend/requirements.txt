@@ -58,9 +58,6 @@ bcrypt==4.0.1
 cachetools==5.5.0
 diskcache==5.6.3
 
-# --- 图处理（知识图谱阶段用）---
-networkx==3.4.2
-
 # --- 语音合成（Edge TTS，免费，无需 API Key）---
 # 6.1.12 已被微软端点拒绝（WebSocket 403），需 7.x
 edge-tts>=7.3.1
@@ -70,9 +67,8 @@ pydantic==2.10.4
 pydantic-settings==2.7.0
 python-dateutil==2.9.0
 loguru==0.7.3           # 结构化日志（替代旧项目的 structlog）
-httpx==0.28.1           # HTTP 客户端（百炼 API 调用 + 测试）
+httpx==0.28.1           # HTTP 客户端（百炼 API 调用 + 爬虫 + 测试）
 
 # --- 开发与测试 ---
 pytest==8.3.4
 pytest-asyncio==0.25.0
-httpx==0.28.1

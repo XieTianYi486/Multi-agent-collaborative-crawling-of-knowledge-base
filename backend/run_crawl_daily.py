@@ -91,25 +91,35 @@ def main() -> int:
 
     kb_init_db()
 
-    results = run_daily({"site_codes": args.site_codes} if args.site_codes else None)
+    # 跨进程互斥：与 uvicorn 内手动触发的流水线抢同一把文件锁，
+    # 已在运行时直接退出，避免两进程同时入库产生重复文档
+    from crawler.lock import pipeline_lock
 
-    failed = [r.name for r in results.values() if not r.ok and not r.skipped]
-    for name, r in results.items():
-        if r.ok:
-            state = "完成"
-        elif r.skipped:
-            state = "跳过（预算/LLM不可用）"
-        else:
-            state = "失败"
-        print(f"[{state}] {name} ({r.duration_ms}ms)")
-        if not r.ok and not r.skipped:
-            print(f"       错误: {r.error}")
+    if not pipeline_lock.acquire():
+        print("[跳过] 流水线正在运行（或锁未释放），本次任务结束。")
+        return 1
+    try:
+        results = run_daily({"site_codes": args.site_codes} if args.site_codes else None)
 
-    logging.getLogger("crawler").info(
-        "===== 每日爬取流水线结束（%s）=====",
-        "失败" if failed else "成功",
-    )
-    return 1 if failed else 0
+        failed = [r.name for r in results.values() if not r.ok and not r.skipped]
+        for name, r in results.items():
+            if r.ok:
+                state = "完成"
+            elif r.skipped:
+                state = "跳过（预算/LLM不可用）"
+            else:
+                state = "失败"
+            print(f"[{state}] {name} ({r.duration_ms}ms)")
+            if not r.ok and not r.skipped:
+                print(f"       错误: {r.error}")
+
+        logging.getLogger("crawler").info(
+            "===== 每日爬取流水线结束（%s）=====",
+            "失败" if failed else "成功",
+        )
+        return 1 if failed else 0
+    finally:
+        pipeline_lock.release()
 
 
 if __name__ == "__main__":

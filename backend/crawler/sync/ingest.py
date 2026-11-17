@@ -229,18 +229,58 @@ def _sync_one(
     """单文档同步（幂等闸门 → 组装 md → 建 KB Document → 入库 → 置待审核 → 留痕）。"""
     from app.models.document import Document as KbDocument
 
-    # 幂等闸门①：KB 侧 source_hash 已存在 → 跳过
+    # 幂等闸门①：KB 侧 source_hash 已存在 → 跳过；
+    # 但若是上一次同步失败留下的空壳（status=3 或零分块），
+    # 必须重新处理修复，否则重试永远被闸门挡住、文档永远残缺
     existing = (
         kb_db.query(KbDocument)
         .filter(KbDocument.source_hash == crawl_doc.url_hash)
         .first()
     )
     if existing:
-        repo.mark_kb_synced(
-            session, doc_id=crawl_doc.id, kb_doc_id=existing.id,
-            title=crawl_doc.title, status="ok", error="KB 侧 source_hash 已存在",
+        broken = existing.status == 3 or (
+            existing.status == 1 and not existing.chunk_count
         )
-        stats.skipped += 1
+        if not broken:
+            repo.mark_kb_synced(
+                session, doc_id=crawl_doc.id, kb_doc_id=existing.id,
+                title=crawl_doc.title, status="ok", error="KB 侧 source_hash 已存在",
+            )
+            stats.skipped += 1
+            return
+        log.info("检测到失败残留文档 KB#%d，重新处理: %s", existing.id, crawl_doc.title[:60])
+        try:
+            from app.tasks.document_tasks import _process_document_task
+
+            _process_document_task(existing.id)
+            repaired = (
+                kb_db.query(KbDocument)
+                .populate_existing()
+                .filter(KbDocument.id == existing.id)
+                .first()
+            )
+            if repaired is None or repaired.status != 1 or not repaired.chunk_count:
+                raise RuntimeError("重新处理失败或分块为空")
+            repaired.review_status = 1
+            repaired.review_comment = (
+                f"爬虫自动入库：来源 {crawl_doc.url}；"
+                f"{getattr(crawl_doc.site, 'risk_level', '')}风险源；待管理员审核后发布"
+            )
+            kb_db.commit()
+        except Exception as exc:  # noqa: BLE001
+            kb_db.rollback()
+            repo.mark_kb_synced(
+                session, doc_id=crawl_doc.id, kb_doc_id=existing.id,
+                title=crawl_doc.title,
+                status="failed", error=f"修复入库失败: {type(exc).__name__}: {exc}",
+            )
+            stats.failed += 1
+            log.error("失败残留文档修复失败 %s: %s", crawl_doc.url, exc)
+            return
+        repo.mark_kb_synced(
+            session, doc_id=crawl_doc.id, kb_doc_id=existing.id, title=crawl_doc.title,
+        )
+        stats.synced += 1
         return
 
     # 智能体结论：审核拦截 / 与教学领域无关 → 跳过
@@ -334,9 +374,25 @@ def _create_kb_document(
             kb_db.commit()
         raise
 
+    # 4.5 _process_document_task 内部吞异常并置 status=3 后正常返回，
+    #     必须复查结果：失败/零分块时抛错，让 kb_syncs 记 failed 而不是
+    #     把一个永远无法审核的空壳文档标记为"待审核"（看起来同步成功）。
+    #     注意 populate_existing：SessionLocal 为 expire_on_commit=False，
+    #     普通 first() 会返回身份映射里的旧对象（status=0 的过期快照）
+    processed = (
+        kb_db.query(KbDocument)
+        .populate_existing()
+        .filter(KbDocument.id == doc.id)
+        .first()
+    )
+    if processed is None or processed.status != 1 or not processed.chunk_count:
+        processed.status = 3
+        kb_db.commit()
+        raise RuntimeError("文档处理失败或分块为空，无法入库")
+
     # 5. 置为待审核（review_status=1）：爬取的是公开网页节选，质量参差，
     #    由管理员在「文档审核」页确认后再发布，避免未经人工确认的内容直接进入检索结果。
-    doc = kb_db.query(KbDocument).filter(KbDocument.id == doc.id).first()
+    doc = processed
     doc.review_status = 1
     doc.review_comment = (
         f"爬虫自动入库：来源 {crawl_doc.url}；"

@@ -7,6 +7,7 @@ import json
 import time
 from typing import AsyncGenerator, Dict, List, Optional
 
+import httpx
 from openai import AsyncOpenAI, OpenAI
 
 from app.core.config import settings
@@ -18,6 +19,13 @@ _PROVIDER_BASE_URLS = {
     "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "deepseek": "https://api.deepseek.com/v1",
 }
+
+# LLM 请求超时（秒）。同步端点跑在 anyio 共享线程池里：
+# SDK 默认 read=600s + 2 次重试会让一个挂起的调用占住线程近 30 分钟，
+# 认证用户几十个并发即可拖死全部同步接口（含登录）。
+# 收紧到 read=120s（覆盖思考模型长回答）+ 只重试 1 次，最坏占用约 4 分钟。
+_LLM_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+_LLM_MAX_RETRIES = 1
 
 
 class ChatLLM:
@@ -58,12 +66,16 @@ class ChatLLM:
         self._client = OpenAI(
             api_key=self.api_key,
             base_url=base_url,
+            timeout=_LLM_TIMEOUT,
+            max_retries=_LLM_MAX_RETRIES,
         )
         # 流式问答必须用异步客户端：同步流在 async 生成器中会阻塞事件循环，
         # 导致 SSE 直到整段生成结束才一次性返回（表现为"首字延迟＝总耗时"）。
         self._async_client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=base_url,
+            timeout=_LLM_TIMEOUT,
+            max_retries=_LLM_MAX_RETRIES,
         )
         print(f"[LLM] provider={self.provider}, model={self.model}, base_url={base_url}")
 

@@ -11,6 +11,7 @@ import logging
 import threading
 from typing import Optional
 
+from .lock import pipeline_lock
 from .pipeline import run_daily
 from .timeutil import utcnow
 
@@ -53,6 +54,10 @@ def start_run(trigger: str = "manual", ctx: Optional[dict] = None) -> bool:
         if _run_state["running"]:
             log.warning("流水线已在运行中，忽略新的触发（%s）", trigger)
             return False
+        # 跨进程互斥：定时任务（独立进程）与手动触发（uvicorn 进程）不能同时入库
+        if not pipeline_lock.acquire():
+            log.warning("流水线被其他进程占用（trigger=%s），本次触发被拒绝", trigger)
+            return False
         _run_state = {
             "running": True,
             "trigger": trigger,
@@ -89,6 +94,7 @@ def start_run(trigger: str = "manual", ctx: Optional[dict] = None) -> bool:
             with _lock:
                 _run_state["running"] = False
                 _run_state["finished_at"] = utcnow()
+            pipeline_lock.release()
 
     thread = threading.Thread(target=_target, daemon=True, name="crawler-pipeline")
     thread.start()

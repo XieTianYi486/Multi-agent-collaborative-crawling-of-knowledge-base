@@ -41,8 +41,11 @@ def _kb_stats() -> dict:
     try:
         return {
             "documents": db.query(func.count(KbDocument.id)).scalar() or 0,
+            # 已发布 = 处理完成 + 通过审核（与检索可见口径一致，避免把待审核计入）
             "published": db.query(func.count(KbDocument.id))
-            .filter(KbDocument.status == 1).scalar() or 0,
+            .filter(KbDocument.status == 1, KbDocument.review_status == 2).scalar() or 0,
+            "pending_review": db.query(func.count(KbDocument.id))
+            .filter(KbDocument.status == 1, KbDocument.review_status == 1).scalar() or 0,
             "chunks": db.query(func.count(DocChunk.id)).scalar() or 0,
             "with_source_url": db.query(func.count(KbDocument.id))
             .filter(KbDocument.source_url.isnot(None), KbDocument.source_url != "")

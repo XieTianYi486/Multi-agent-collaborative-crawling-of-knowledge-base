@@ -115,14 +115,20 @@ def _crawl_site(session, site: Site, http: httpx.Client, stats: CrawlStats) -> N
     log.info("站点 %s 完成：新增 %d，去重 %d", site.code, site_new, site_dup)
 
 
-def ingest_item(session, site: Site, item) -> Document | None:
-    """三层去重后入库。返回新增的 Document；重复/无内容返回 None。"""
+def ingest_item(session, site: Site, item, return_existing: bool = False) -> Document | None:
+    """
+    三层去重后入库。返回新增的 Document；重复/无内容返回 None。
+
+    return_existing=True 时，重复（URL/内容哈希/SimHash）返回库中已有文档，
+    供定向补采把队列行关联到既有文档以完成需求闭环；默认行为保持不变。
+    """
     settings = get_settings()
 
     # 1. URL 去重
     uh = url_hash(item.url)
-    if repo.find_document_by_url_hash(session, uh):
-        return None
+    existing = repo.find_document_by_url_hash(session, uh)
+    if existing:
+        return existing if return_existing else None
 
     # 2. 正文抽取（HTML → Markdown + 纯文本）
     text = item.content_text or ""
@@ -142,11 +148,16 @@ def ingest_item(session, site: Site, item) -> Document | None:
 
     # 3. 内容哈希去重 + SimHash 近重复
     ch = content_hash(text or item.title)
-    if repo.find_document_by_content_hash(session, ch):
-        return None
+    existing = repo.find_document_by_content_hash(session, ch)
+    if existing:
+        return existing if return_existing else None
     sh = simhash64(text or item.title)
-    if repo.find_near_dup(session, sh, settings.simhash_near_window_days, settings.simhash_hamming_threshold):
-        return None
+    existing = repo.find_near_dup(
+        session, sh,
+        settings.simhash_near_window_days, settings.simhash_hamming_threshold,
+    )
+    if existing:
+        return existing if return_existing else None
 
     # 落盘：Markdown（仅低风险全文）与原文 HTML
     md_rel = ""
