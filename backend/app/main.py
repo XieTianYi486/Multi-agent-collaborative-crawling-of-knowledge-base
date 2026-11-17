@@ -6,6 +6,7 @@
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+import threading
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,6 +58,9 @@ async def lifespan(app: FastAPI):
 
     # 初始化默认数据（角色 + 管理员）
     _init_default_data()
+
+    # 预热本地重排序模型：ONNX 首次加载约 20s，放后台线程避免拖慢启动与首个问答
+    _warmup_local_reranker()
 
     # 预置视频专区数据（仅在视频表为空时写入）
     _init_default_videos()
@@ -212,6 +216,29 @@ def _assert_production_safety():
         + "\n  - ".join(problems)
         + "\n请在 backend/.env 中修改后重启（仅本地开发调试可设置 SKIP_SAFETY_CHECK=true 豁免）。"
     )
+
+
+def _warmup_local_reranker():
+    """后台预热本地 ONNX 重排模型（首次加载约 20s，避免落到首个用户请求上）"""
+    provider = (settings.RERANK_PROVIDER or "auto").lower()
+    use_onnx = provider == "onnx" or (
+        provider == "auto" and settings.LLM_PROVIDER.lower() == "local"
+    )
+    if not use_onnx:
+        return
+
+    def _run():
+        try:
+            from app.rag.reranker.llm_reranker import get_reranker
+            reranker = get_reranker()
+            ensure = getattr(reranker, "_ensure_loaded", None)
+            if callable(ensure):
+                ensure()
+                print("[启动] 本地重排模型预热完成")
+        except Exception as e:
+            print(f"[启动] 本地重排模型预热失败（将回退 LLM 排序）: {e}")
+
+    threading.Thread(target=_run, name="reranker-warmup", daemon=True).start()
 
 
 def _init_default_data():

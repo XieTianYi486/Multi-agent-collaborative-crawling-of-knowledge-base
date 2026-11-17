@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     FUSION_TOP_K: int = 50        # 融合后候选集大小
     RERANK_CANDIDATES: int = 20   # 送入重排序器的候选数量
     RERANK_TOP_N: int = 5         # 重排序后最终保留数量
+    # 重排序器：auto=本地 LLM 模式用 cross-encoder，云端用 LLM 排序；可选 llm / onnx
+    RERANK_PROVIDER: str = "auto"
+    # 本地 cross-encoder 模型目录（留空则用 chroma_data/models/bge-reranker-base-onnx）
+    RERANK_LOCAL_MODEL: str = ""
+    # ONNX 重排最高分（sigmoid，0~1）低于该值则拒答；0=关闭
+    RERANK_MIN_SCORE: float = 0.0
     # 查询改写的最长等待时间（毫秒）：超时直接用原问题检索，保证首字延迟有上限
     QUERY_REWRITE_TIMEOUT_MS: int = 1200
     # 改写策略：conditional=仅短问句/指代问句/带历史时改写（省时省钱），always=全量，off=关闭

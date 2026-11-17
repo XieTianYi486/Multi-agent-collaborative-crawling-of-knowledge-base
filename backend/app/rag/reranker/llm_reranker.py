@@ -9,6 +9,7 @@ import logging
 import re
 from typing import List, Dict, Optional
 
+from app.core.config import settings
 from app.rag.llm.dashscope_llm import get_llm
 
 logger = logging.getLogger(__name__)
@@ -104,12 +105,24 @@ class LLMReranker:
 
 
 # --- 全局单例 ---
-_reranker: Optional[LLMReranker] = None
+_reranker = None
 
 
-def get_reranker() -> LLMReranker:
-    """获取重排序器单例"""
+def get_reranker():
+    """
+    按配置返回重排序器：
+      - llm:  LLM 排序（云端 qwen-plus 场景，精度依赖模型理解力）
+      - onnx: 本地 cross-encoder BGE-reranker（本地模型场景，亚秒级 + 绝对分数）
+      - auto: LLM_PROVIDER=local 时用 onnx，否则用 llm
+    """
     global _reranker
     if _reranker is None:
-        _reranker = LLMReranker()
+        provider = (settings.RERANK_PROVIDER or "auto").lower()
+        if provider == "auto":
+            provider = "onnx" if settings.LLM_PROVIDER.lower() == "local" else "llm"
+        if provider == "onnx":
+            from app.rag.reranker.onnx_reranker import get_onnx_reranker
+            _reranker = get_onnx_reranker()
+        else:
+            _reranker = LLMReranker()
     return _reranker

@@ -5,7 +5,7 @@
 
 from typing import Literal
 
-IntentType = Literal["greeting", "qa", "navigation", "rejected"]
+IntentType = Literal["greeting", "offtopic", "qa", "navigation", "rejected"]
 
 
 # 简单的关键词规则匹配（无需 LLM 调用，快速路由）
@@ -24,6 +24,20 @@ REJECTED_PATTERNS = [
     "之前的指令", "重新开始",
 ]
 
+# 域外日常问题（天气/时间等）：与教学资料无关，直接引导回范围
+OFFTOPIC_PATTERNS = [
+    "天气", "气温", "下雨", "下雪", "多少度", "空气质量",
+    "现在几点", "今天几号", "星期几", "今天是几",
+]
+
+# 技术词优先：如「ESP32 如何获取天气数据」属于技术问题，不能按域外拦截
+TECH_HINTS = [
+    "esp32", "esp-idf", "esp8266", "树莓派", "单片机", "开发板", "传感器",
+    "模块", "代码", "程序", "接口", "api", "协议", "数据库", "python", "java",
+    "c++", "c语言", "驱动", "电路", "引脚", "gpio", "wifi", "wi-fi", "蓝牙",
+    "i2c", "spi", "uart", "爬虫", "大模型", "rag", "ollama", "部署", "服务器",
+]
+
 
 def detect_intent(question: str) -> IntentType:
     """
@@ -31,6 +45,7 @@ def detect_intent(question: str) -> IntentType:
 
     返回:
         "greeting"   - 闲聊/问候 → 直接回复，不走 RAG
+        "offtopic"   - 天气/时间等域外日常问题 → 引导回教学范围
         "qa"         - 技术资料问答 → 完整 RAG 流程
         "navigation" - 文档导航 → 返回相关文档列表
         "rejected"   - 违规内容 → 直接拒答
@@ -41,6 +56,12 @@ def detect_intent(question: str) -> IntentType:
     for pattern in REJECTED_PATTERNS:
         if pattern.lower() in question_lower:
             return "rejected"
+
+    # 检测域外日常问题（命中日常词且不含任何技术词）
+    if any(p in question_lower for p in OFFTOPIC_PATTERNS) and not any(
+        t in question_lower for t in TECH_HINTS
+    ):
+        return "offtopic"
 
     # 检测闲聊意图
     for pattern in GREETING_PATTERNS:
@@ -70,3 +91,12 @@ def get_greeting_response(question: str) -> str:
 def get_rejected_response() -> str:
     """违规拒答"""
     return "抱歉，我无法处理这个问题。如有技术资料检索方面的需求，请重新提问。"
+
+
+def get_offtopic_response() -> str:
+    """域外日常问题引导"""
+    return (
+        "抱歉，我只负责检索学院教学资料（嵌入式与物联网、软件工程等方向），"
+        "无法回答天气、时间等日常生活问题。"
+        "您可以问我 ESP32、树莓派、编程、数据库或 AI 应用相关的问题。"
+    )

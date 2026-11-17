@@ -11,6 +11,9 @@ import numpy as np
 from app.core.config import settings
 from app.core.exceptions import EmbeddingException
 
+# BGE 中文检索在查询侧建议添加的指令前缀（文档侧不加）
+_BGE_QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
+
 
 # ---------- 远程 API 配置 ----------
 _PROVIDER_DEFAULTS = {
@@ -73,9 +76,9 @@ class TextEmbeddings:
             )
 
         print(f"[Embedding] 加载本地 ONNX: {onnx_path}")
-        # 单线程 + 禁用图优化 → 大幅降低内存峰值（避免 2GB 匿名段）
+        # 多线程加速：全量重建 23k 分块时 4 线程约为单线程的 3 倍
         sess_opts = ort.SessionOptions()
-        sess_opts.intra_op_num_threads = 1
+        sess_opts.intra_op_num_threads = min(4, os.cpu_count() or 1)
         sess_opts.inter_op_num_threads = 1
         sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
         self._sess = ort.InferenceSession(
@@ -93,9 +96,10 @@ class TextEmbeddings:
         按小 batch 分批推理，控制 BERT 注意力中间张量的内存峰值
         """
         all_results = []
-        # 小 batch（BERT-base 在 seq_len=256 时 batch=4 内存峰值约 200MB）
+        # 小 batch（BERT-base 在 seq_len=512 时 batch=4 内存峰值约 300MB）
         MICRO_BATCH = 4
-        MAX_LEN = 256
+        # 与 CHUNK_SIZE=512 对齐：256 会截掉一半分块内容，直接损伤召回
+        MAX_LEN = 512
         for i in range(0, len(texts), MICRO_BATCH):
             batch = texts[i:i + MICRO_BATCH]
             enc = self._tok(
@@ -112,12 +116,12 @@ class TextEmbeddings:
                 ).astype(np.int64)
             outs = self._sess.run(None, feed)
             last_hidden = outs[0]  # (batch, seq_len, hidden)
-            mask = enc["attention_mask"][..., None].astype(np.float32)
-            pooled = np.sum(last_hidden * mask, axis=1) / np.maximum(np.sum(mask, axis=1), 1e-9)
+            # BGE 系列必须用 CLS 池化（首 token），mean pooling 会显著损伤检索区分度
+            pooled = last_hidden[:, 0]
             norms = np.linalg.norm(pooled, axis=1, keepdims=True) + 1e-12
             result = (pooled / norms).astype(np.float32)
             all_results.extend(result.tolist())
-            del enc, outs, last_hidden, mask, pooled, norms, result
+            del enc, outs, last_hidden, pooled, norms, result
         return all_results
 
     # ---------------- 远程 API 初始化 ----------------
@@ -161,6 +165,9 @@ class TextEmbeddings:
             return [0.0] * self.dimension
         texts = [text.strip()]
         if self._local:
+            # BGE 中文检索建议查询侧加指令前缀（文档侧不加）
+            if "bge" in (self.model or "").lower():
+                texts = [f"{_BGE_QUERY_INSTRUCTION}{texts[0]}"]
             return self._embed_local(texts)[0]
         return self._call_api(texts, text_type="query")[0]
 

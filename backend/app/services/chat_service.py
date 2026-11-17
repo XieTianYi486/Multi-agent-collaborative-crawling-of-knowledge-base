@@ -25,7 +25,7 @@ from app.rag.llm.dashscope_llm import get_llm
 from app.rag.reranker.llm_reranker import get_reranker
 from app.rag.prompts.chat_prompt import build_chat_messages
 from app.rag.query_processor.intent_recognition import (
-    detect_intent, get_greeting_response, get_rejected_response,
+    detect_intent, get_greeting_response, get_rejected_response, get_offtopic_response,
 )
 from app.rag.query_processor.query_rewrite import get_query_rewriter, should_rewrite
 from app.db.cache import cache
@@ -95,6 +95,20 @@ class ChatService:
         cache.set_to_memory(key, payload)
         cache.set_to_disk(key, payload, ttl=settings.CACHE_TTL_ANSWER)
 
+    @staticmethod
+    def _is_low_relevance(top_chunks: List[Dict]) -> bool:
+        """
+        本地 cross-encoder 重排后按绝对分数做低相关拒答。
+
+        仅对带 rerank_score 的候选（ONNX 重排路径）生效；
+        云端 LLM 排序没有绝对分数，自动跳过，保持原行为。
+        """
+        threshold = settings.RERANK_MIN_SCORE
+        if threshold <= 0 or not top_chunks:
+            return False
+        score = top_chunks[0].get("rerank_score")
+        return score is not None and float(score) < threshold
+
     # ==================== 非流式问答 ====================
 
     def ask(
@@ -121,6 +135,8 @@ class ChatService:
             return self._fast_response(get_greeting_response(question))
         if intent == "rejected":
             return self._fast_response(get_rejected_response())
+        if intent == "offtopic":
+            return self._fast_response(get_offtopic_response())
 
         # === 第0.25步：问答缓存（仅单轮对话；多轮历史影响答案，不缓存）===
         cache_key = None
@@ -181,6 +197,20 @@ class ChatService:
         top_chunks = self.reranker.rerank(question, rerank_candidates)
         top_chunks = top_chunks[:settings.RERANK_TOP_N]
         t_rerank = (time.time() - t_rerank_start) * 1000
+
+        # === 第3.5步：低相关拒答（本地 cross-encoder 绝对分数低于阈值）===
+        if self._is_low_relevance(top_chunks):
+            return {
+                "answer": REFUSAL_FALLBACK_ANSWER,
+                "sources": [],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "latency": {
+                    "retrieval_ms": round(t_retrieval),
+                    "rerank_ms": round(t_rerank),
+                    "llm_ms": 0,
+                    "total_ms": round((time.time() - t_start) * 1000),
+                },
+            }
 
         # === 第4步：组装 Prompt ===
         messages = build_chat_messages(
@@ -276,6 +306,15 @@ class ChatService:
                 "latency": {"retrieval_ms": 0, "llm_ms": 0, "total_ms": 0},
             }}
             return
+        if intent == "offtopic":
+            yield {"type": "token", "data": get_offtopic_response()}
+            yield {"type": "sources", "data": []}
+            yield {"type": "done", "data": {
+                "full_answer": get_offtopic_response(),
+                "total_tokens": 0,
+                "latency": {"retrieval_ms": 0, "llm_ms": 0, "total_ms": 0},
+            }}
+            return
 
         # === 第0.25步：问答缓存（仅单轮对话；多轮历史影响答案，不缓存）===
         cache_key = None
@@ -345,13 +384,38 @@ class ChatService:
             }
             return
 
-        # === 第3步：LLM 重排序 ===
+        # === 第3步：重排序（本地 ONNX cross-encoder / 云端 LLM）===
+        t_rerank_start = time.time()
         rerank_candidates = candidates[:settings.RERANK_CANDIDATES]
-        # 重排序内部是同步 LLM 调用（约 1-2 秒），必须在线程池执行
+        # 重排序是同步 CPU/网络调用，必须在线程池执行
         top_chunks = await run_in_threadpool(
             self.reranker.rerank, question, rerank_candidates
         )
         top_chunks = top_chunks[:settings.RERANK_TOP_N]
+        t_rerank = (time.time() - t_rerank_start) * 1000
+
+        # === 第3.5步：低相关拒答（本地 cross-encoder 绝对分数低于阈值）===
+        if self._is_low_relevance(top_chunks):
+            total_ms = round((time.time() - t_start) * 1000)
+            # 拒答文案同样以 token 推给前端，避免气泡空白
+            yield {"type": "token", "data": REFUSAL_FALLBACK_ANSWER}
+            yield {"type": "sources", "data": []}
+            yield {
+                "type": "done",
+                "data": {
+                    "answer": REFUSAL_FALLBACK_ANSWER,
+                    "full_answer": REFUSAL_FALLBACK_ANSWER,
+                    "sources": [],
+                    "status": "not_found",
+                    "latency": {
+                        "retrieval_ms": round(t_retrieval),
+                        "rerank_ms": round(t_rerank),
+                        "llm_ms": 0,
+                        "total_ms": total_ms,
+                    },
+                },
+            }
+            return
         sources = [
             {
                 "document_id": c.get("document_id", 0),
@@ -409,6 +473,7 @@ class ChatService:
                 "usage": usage,
                 "latency": {
                     "retrieval_ms": round(t_retrieval),
+                    "rerank_ms": round(t_rerank),
                     "llm_ms": round(t_llm),
                     "total_ms": total_ms,
                 },

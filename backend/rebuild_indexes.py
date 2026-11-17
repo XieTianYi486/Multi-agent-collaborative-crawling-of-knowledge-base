@@ -51,6 +51,26 @@ def main():
         print("   请先对这些文档执行重新索引（POST /api/v1/documents/{doc_id}/reindex）填充分块内容，再运行本脚本。")
         return
 
+    # 去重：同一文档内 chunk_index 重复会产生相同 chunk_id，
+    # 导致 FAISS 向量数与元数据表条数不一致（历史遗留脏数据）。
+    # 保留内容最长的一条（信息量最大）。
+    seen = {}
+    deduped = []
+    for c in chunks:
+        key = (c.document_id, c.chunk_index)
+        if key not in seen:
+            seen[key] = len(deduped)
+            deduped.append(c)
+        else:
+            old = deduped[seen[key]]
+            if len(c.content or "") > len(old.content or ""):
+                deduped[seen[key]] = c
+    removed = len(chunks) - len(deduped)
+    if removed:
+        print(f"检测到 {removed} 个重复 (document_id, chunk_index) 分块，已保留内容最长的一条")
+    chunks = deduped
+    print(f"去重后待向量化分块数: {len(chunks)}")
+
     # 2. 备份并清空旧索引
     faiss_dir = os.path.join(settings.CHROMA_PERSIST_DIR, "faiss_index")
     backup_suffix = time.strftime("%Y%m%d_%H%M%S")

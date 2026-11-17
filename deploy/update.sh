@@ -47,6 +47,9 @@ echo "    前端资源整体替换：$OLD_COUNT -> $NEW_COUNT 个文件"
 rm -rf "$stage/frontend/dist"
 cp -a "$stage/." "$APP_DIR/"
 rm -rf "$stage"
+# cp -a 会把 mktemp 临时目录（默认 700）的权限带到 $APP_DIR，
+# 导致 kb 用户无法进入 /opt/kb，服务启动报 CHDIR Permission denied
+chmod 755 "$APP_DIR"
 
 echo "==> 3/5 检查依赖是否需要重装"
 AFTER=$(md5sum "$APP_DIR/backend/requirements.txt" | awk '{print $1}')
