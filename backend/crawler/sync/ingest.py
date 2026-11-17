@@ -2,8 +2,7 @@
 
 完全复用 backend/seed_documents.py 已验证的入库范式：
   建 KB Document 行 → commit → 同步调 _process_document_task
-  → 置 review_status=2 + status=1（缺此步 ChatService._visible_doc_ids
-  会拦截全部爬取内容，员工检索不到）。
+  → 置 review_status=1（待管理员在「知识审核」页审核后发布）+ status=1。
 
 幂等设计（重复运行零副作用）：
 - 闸门①：KB documents.source_hash == crawl_doc.url_hash 则跳过；
@@ -16,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -79,6 +78,9 @@ CRAWL_CATEGORIES = [
     ("安全公告", "生产与认证", 3, "官方安全公告（Advisory）"),
     ("生产支持", "生产与认证", 4, "生产问题讨论与支持"),
     ("技术社区文章", "嵌入式开发", 11, "技术社区公开分享内容"),
+    # ===== 通用编程/软件开发（补采 Java、Python 等非嵌入式问题时需要有对应分类，
+    # 否则 tagger 只能从嵌入式/AI 分类里选，判为无关而丢弃）=====
+    ("编程与软件开发", "", 6, "Java/Python/C/C++ 等编程语言与软件开发教学资料"),
 ]
 
 # 站点 code → 默认分类名（tagger 不可用/未打标时的规则兜底）
@@ -136,7 +138,15 @@ def ensure_crawl_categories(db: Session) -> dict[str, int]:
 
 
 def ensure_admin(db: Session) -> int:
-    """确保 4 个预置角色与 admin 管理员存在（爬虫入库以 admin 为 created_by）。"""
+    """确保 6 个预置角色与管理员存在（爬虫入库以管理员为 created_by）。
+
+    安全约束：
+    - 角色列表与 main.py._init_default_data 保持同序，保证爬虫先跑时
+      角色 ID 与 API 启动引导一致（学生导入等按 ID 引用的脚本才安全）；
+    - 管理员密码取自 app 配置 settings.ADMIN_PASSWORD，绝不硬编码弱口令；
+    - 管理员已存在时不做任何改动（密码轮换由部署脚本负责）。
+    """
+    from app.core.config import settings
     from app.core.security import hash_password
     from app.models.user import Role, User
 
@@ -146,6 +156,10 @@ def ensure_admin(db: Session) -> int:
          ["documents:*", "categories:*", "logs:read", "stats:read"]),
         ("院系管理员", "dept_admin", "管理院系文档和问答统计",
          ["documents:read", "stats:read"]),
+        ("老师", "teacher", "教学人员，可查询知识库内容并投稿教学资料",
+         ["chat:ask", "documents:read", "documents:upload", "stats:read"]),
+        ("学生", "student", "学生，可查询知识库内容",
+         ["chat:ask", "documents:read"]),
         ("访客", "employee", "浏览与检索公开教学资料",
          ["chat:ask", "documents:read"]),
     ]
@@ -155,14 +169,14 @@ def ensure_admin(db: Session) -> int:
     db.flush()
     super_admin_role = db.query(Role).filter(Role.code == "super_admin").first()
 
-    admin = db.query(User).filter(User.username == "admin").first()
+    admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
     if not admin:
         admin = User(
-            username="admin",
-            password_hash=hash_password("admin123"),
+            username=settings.ADMIN_USERNAME,
+            password_hash=hash_password(settings.ADMIN_PASSWORD),
             real_name="系统管理员",
-            email="admin@company.com",
-            department="人力资源部",
+            email=settings.ADMIN_EMAIL,
+            department="人工智能学院",
             role_id=super_admin_role.id,
             status=1,
         )
@@ -170,7 +184,7 @@ def ensure_admin(db: Session) -> int:
         db.flush()
         db.refresh(admin)
         db.commit()
-        log.info("已创建管理员用户 admin（爬虫入库使用）")
+        log.info("已创建管理员用户 %s（爬虫入库使用）", settings.ADMIN_USERNAME)
     return admin.id
 
 
@@ -212,7 +226,7 @@ def _sync_one(
     admin_id: int,
     stats: SyncStats,
 ) -> None:
-    """单文档同步（幂等闸门 → 组装 md → 建 KB Document → 入库 → 自动过审 → 留痕）。"""
+    """单文档同步（幂等闸门 → 组装 md → 建 KB Document → 入库 → 置待审核 → 留痕）。"""
     from app.models.document import Document as KbDocument
 
     # 幂等闸门①：KB 侧 source_hash 已存在 → 跳过
@@ -270,7 +284,7 @@ def _create_kb_document(
     category_map: dict[str, int],
     admin_id: int,
 ) -> int:
-    """组装 Markdown → 建 KB Document 行 → 入库 → 自动过审。返回 KB 文档 ID。"""
+    """组装 Markdown → 建 KB Document 行 → 入库 → 置待审核。返回 KB 文档 ID。"""
     from app.core.config import settings as kb_settings
     from app.models.document import Document as KbDocument
 
@@ -320,14 +334,13 @@ def _create_kb_document(
             kb_db.commit()
         raise
 
-    # 5. 自动过审发布（公开技术资料；缺此步可见性过滤会拦截全部爬取内容）
+    # 5. 置为待审核（review_status=1）：爬取的是公开网页节选，质量参差，
+    #    由管理员在「文档审核」页确认后再发布，避免未经人工确认的内容直接进入检索结果。
     doc = kb_db.query(KbDocument).filter(KbDocument.id == doc.id).first()
-    doc.review_status = 2
-    doc.reviewed_by = admin_id
-    doc.reviewed_at = datetime.now()
+    doc.review_status = 1
     doc.review_comment = (
         f"爬虫自动入库：来源 {crawl_doc.url}；"
-        f"{site.risk_level}风险源；仅校内教学使用，自动审核通过"
+        f"{site.risk_level}风险源；待管理员审核后发布"
     )
     doc.status = 1
     kb_db.commit()

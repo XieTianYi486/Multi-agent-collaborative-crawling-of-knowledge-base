@@ -728,7 +728,13 @@ async function openContent(doc: any) {
   contentError.value = ''
   try {
     const res = await client.get(`/documents/${doc.id}/content`)
-    contentText.value = res.data.data?.content || ''
+    // 后端用 code 表达业务失败（HTTP 仍是 200），只有 code=0 才是真的读到内容；
+    // 否则统一按错误提示，避免"文件不存在"被误显示成"暂无内容"
+    if (res.data?.code !== 0) {
+      contentError.value = res.data?.message || '加载失败'
+    } else {
+      contentText.value = res.data.data?.content || ''
+    }
   } catch (e: any) {
     contentError.value = e.response?.data?.message || '加载失败'
   } finally {

@@ -453,7 +453,7 @@ function syncText(status: string): string {
 
 function taskLabel(task: string): string {
   const map: Record<string, string> = {
-    tagger: '打标', reviewer: '审核', summarizer: '摘要',
+    tagger: '打标', reviewer: '审核', summarizer: '摘要', scout: '补采侦察',
   }
   return map[task] || task
 }

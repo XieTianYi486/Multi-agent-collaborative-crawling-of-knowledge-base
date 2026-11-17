@@ -260,11 +260,16 @@ def update_document(
 @router.delete("/{doc_id}", response_model=APIResponse, summary="删除文档")
 def delete_document(
     doc_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_knowledge_admin),
 ):
     """删除文档及其所有关联数据（分块、版本、向量）"""
-    DocumentService.delete_document(db, doc_id)
+    file_path = DocumentService.delete_document(db, doc_id)
+    # 立即提交，避免列表刷新时读到未提交的删除结果（文档看起来"删不掉"）
+    db.commit()
+    # 向量/BM25 索引与文件清理较慢，放到响应之后执行，删除操作立即返回
+    background_tasks.add_task(DocumentService.cleanup_document_assets, doc_id, file_path)
     return APIResponse(code=0, message="文档已删除")
 
 

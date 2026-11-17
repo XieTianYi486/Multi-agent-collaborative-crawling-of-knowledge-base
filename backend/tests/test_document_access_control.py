@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from app.core.exceptions import PermissionDeniedException
+from app.core.exceptions import PermissionDeniedException, ValidationException
 from app.models.document import Document
 from app.services.document_service import DocumentService
 
@@ -90,3 +90,17 @@ def test_list_filters_by_ids(db):
     assert total == 1
     assert [item.id for item in items] == [keep.id]
     assert other.id not in [item.id for item in items]
+
+
+def test_approve_rejects_unprocessed_document(db):
+    """未处理完成（无分块）的文档不能被审核发布，避免产生空壳文档"""
+    processing = _make_doc(db, status=0, review_status=1)
+    with pytest.raises(ValidationException):
+        DocumentService.review_document(db, processing.id, "approve")
+
+    failed = _make_doc(db, status=3, review_status=1)
+    with pytest.raises(ValidationException):
+        DocumentService.review_document(db, failed.id, "approve")
+
+    db.refresh(processing)
+    assert processing.review_status == 1

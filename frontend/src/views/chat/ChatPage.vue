@@ -90,7 +90,7 @@
                 <el-icon :size="28"><Service /></el-icon>
               </div>
               <h2>人工智能学院教学知识库</h2>
-              <p>基于多智能体协作爬取入库的 ESP32、树莓派、嵌入式开发官方文档与社区教程，为您精准检索技术资料，点击下方问题快速开始</p>
+              <p>基于多智能体协作爬取入库的嵌入式与物联网（ESP32、树莓派、电子电路）、软件工程与编程（Java、Python、Web 后端、数据库）官方文档与社区教程，为您精准检索技术资料，点击下方问题快速开始</p>
             </div>
             <div class="preset-grid">
               <div
@@ -130,11 +130,10 @@
               :src="authStore.user.avatar_url"
               class="avatar-img"
             />
-            <img
+            <AssistantMascot
               v-else-if="msg.role === 'assistant'"
-              src="/robot-avatar.svg"
               class="avatar-img"
-              alt="AI 助手"
+              :track="false"
             />
             <el-icon v-else :size="20"><UserFilled /></el-icon>
           </div>
@@ -187,7 +186,7 @@
                 title="没帮助"
               >👎</span>
               <span
-                v-if="canSubmitCollection() && (!msg.sources || msg.sources.length === 0)"
+                v-if="canSubmitCollection() && ((!msg.sources || msg.sources.length === 0) || feedbackState[msg.id] === 2 || collectionIntent(msg))"
                 class="feedback-btn collection-btn"
                 :class="{ active: collectionSubmitted[msg.id] }"
                 @click="submitCollection(msg)"
@@ -205,7 +204,7 @@
         <!-- 流式输出 -->
         <div v-if="chatStore.streaming" class="message-row assistant">
           <div class="message-avatar">
-            <img src="/robot-avatar.svg" class="avatar-img" alt="AI 助手" />
+            <AssistantMascot state="thinking" class="avatar-img" />
           </div>
           <div class="message-bubble streaming">
             <span v-html="renderMarkdown(chatStore.streamContent)"></span>
@@ -320,7 +319,7 @@ import { useRoute } from 'vue-router'
 import {
   Plus, ChatLineRound, Delete, Promotion,
   Service, UserFilled, VideoPause,
-  Cpu, Monitor, Connection, Tools, DataLine, MagicStick,
+  Cpu, Monitor, Connection, Tools, DataLine, MagicStick, Reading, DataBoard,
   Bell, Close, Headset, Menu,
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/store/chat'
@@ -331,6 +330,7 @@ import MarkdownIt from 'markdown-it'
 import client from '@/api/client'
 import { ticketApi } from '@/api/ticket'
 import { collectionApi } from '@/api/collection'
+import AssistantMascot from '@/components/counselor/AssistantMascot.vue'
 
 const chatStore = useChatStore()
 const authStore = useAuthStore()
@@ -419,6 +419,24 @@ const presetQuestions = [
     ],
   },
   {
+    category: 'Python 与后端',
+    icon: DataBoard,
+    questions: [
+      'Python 基础语法从哪里开始学？',
+      'FastAPI 怎么定义一个接口？',
+      'Web 后端如何处理数据库连接？',
+    ],
+  },
+  {
+    category: 'Java 与数据结构',
+    icon: Reading,
+    questions: [
+      'Java 面向对象怎么理解？',
+      '集合框架有哪些常用容器？',
+      '数据结构中链表和数组怎么选？',
+    ],
+  },
+  {
     category: '智能玩具',
     icon: MagicStick,
     questions: [
@@ -444,16 +462,24 @@ function canSubmitCollection(): boolean {
   return true
 }
 
+/** 找到该回答对应的用户提问 */
+function questionOf(msg: any): string {
+  const idx = chatStore.messages.findIndex((m) => m.id === msg.id)
+  for (let i = idx - 1; i >= 0; i--) {
+    if (chatStore.messages[i].role === 'user') return chatStore.messages[i].content || ''
+  }
+  return ''
+}
+
+/** 用户提问本身就是"要资料/要补采"：这类回答即使有来源也给出补采入口 */
+function collectionIntent(msg: any): boolean {
+  const q = questionOf(msg)
+  return /补采|收录|提交.{0,6}(需求|资料)|缺少.{0,8}(资料|文档)|没有.{0,8}(资料|文档)/.test(q)
+}
+
 async function submitCollection(msg: any) {
   if (collectionSubmitted.value[msg.id]) return
-  const idx = chatStore.messages.findIndex((m) => m.id === msg.id)
-  let question = ''
-  for (let i = idx - 1; i >= 0; i--) {
-    if (chatStore.messages[i].role === 'user') {
-      question = chatStore.messages[i].content
-      break
-    }
-  }
+  const question = questionOf(msg)
   if (!question) {
     ElMessage.warning('未找到对应问题，无法提交补采')
     return

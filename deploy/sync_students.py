@@ -18,10 +18,23 @@ os.chdir(BACKEND_DIR)
 
 from app.core.security import hash_password  # noqa: E402
 from app.db.sqlite import SessionLocal  # noqa: E402
-from app.models.user import Department, User  # noqa: E402
+from app.models.user import Department, Role, User  # noqa: E402
 
 DEFAULT_PASSWORD = "123456"
-STUDENT_ROLE_ID = 6
+
+
+def resolve_student_role_id(db) -> int:
+    """按角色编码查找学生角色 ID。
+
+    角色 ID 取决于建库顺序（API 先启动或爬虫先启动），硬编码会在
+    全新库上把学生导入成其他角色（如访客），必须按 code 动态解析。
+    """
+    role = db.query(Role).filter(Role.code == "student").first()
+    if role is None:
+        print("[students] 错误：数据库中没有「学生」角色。"
+              "请先启动一次后端服务完成角色初始化，再执行本脚本。")
+        sys.exit(1)
+    return role.id
 
 
 def main() -> int:
@@ -30,6 +43,7 @@ def main() -> int:
 
     db = SessionLocal()
     try:
+        student_role_id = resolve_student_role_id(db)
         existing_depts = {d.name for d in db.query(Department).all()}
         dept_names = []
         for row in rows:
@@ -63,7 +77,7 @@ def main() -> int:
                 password_hash=hash_password(DEFAULT_PASSWORD),
                 real_name=row["name"],
                 department=row["dept"],
-                role_id=STUDENT_ROLE_ID,
+                role_id=student_role_id,
                 status=1,
                 gender=None,
             ))
@@ -75,7 +89,7 @@ def main() -> int:
         db.commit()
         print(f"[students] 新建账号 {created} 个，已存在跳过 {skipped} 个")
         print(f"[students] 用户总数 {db.query(User).count()}，"
-              f"学生账号 {db.query(User).filter(User.role_id == STUDENT_ROLE_ID).count()}，"
+              f"学生账号 {db.query(User).filter(User.role_id == student_role_id).count()}，"
               f"班级部门 {db.query(Department).filter(Department.dept_type == 'class').count()}")
     finally:
         db.close()

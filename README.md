@@ -277,16 +277,18 @@ python rebuild_indexes.py     # 重新嵌入全部分块（约 ¥10-15，需十�
 
 ```
 crawl（必需：遍历站点→适配器→三层去重→落盘）
+  → discover（补采侦察，可选）→ targeted（定向抓取补采候选，可选）
   → tagger（LLM 可选：分类打标，映射 KB 分类树）
   → review（LLM 可选：拦截广告/垃圾/版权高风险）
   → summarize（LLM 可选：一句话摘要，仅存爬虫库）
-  → kb_sync（必需：入库 KB 主库 → 自动过审发布）
+  → kb_sync（必需：入库 KB 主库 → 置待审核）
+  → resolve（补采需求自动闭环，可选）
 ```
 
 - **智能体协作**：轻量 DAG 编排器，deps/指数退避重试/optional；LLM 步骤超每日预算（默认 ¥2.0，实测全量一轮仅 ¥0.067）或 API 不可用时自动跳过，规则管线照常运行
 - **幂等**：URL 哈希 → 内容哈希 → SimHash 三层去重 + KB 侧 `source_hash` 闸门 + `kb_syncs` 唯一索引，重复运行零副作用
 - **版权合规**：risk_level 分级（low 全文 / medium 节选500字+原文链接 / high 不入库），`source_authorizations` 留痕；论坛内容只存节选
-- **入库**：爬取文档自动过审发布（`security_level=1`），写入 `source_url/source_hash` 溯源字段，回答中展示原文链接
+- **入库**：爬取文档入库后置为待审核（`review_status=1`，`security_level=1`），由管理员在「知识审核」页人工确认后发布；写入 `source_url/source_hash` 溯源字段，回答中展示原文链接
 - **新增站点零代码**：`crawler/config/sites.yaml` 加一条配置即可。已有适配器：`rss_feed` / `html_list`（list+tree）/ `sitemap` / `github`（search+repo）/ `espressif_docs`（SPA 探活）；探活失败/无权限的站点自动跳过（"爬不了就不爬"）
 
 > 注意：爬虫进程与 uvicorn 共用向量库，建议低峰调度；首轮大批量回填建议临时停服。

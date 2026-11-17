@@ -10,12 +10,12 @@ providers:
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
 tasks:
-  tagger:        # 每日新文档分类打标（批量、量最大 → 最便宜档）
+  tagger:        # 每日新文档分类打标（批量、量最大）
     provider: dashscope
-    model: qwen-flash
+    model: qwen-plus
     batch: true
-    price_in: 0.36
-    price_out: 1.9
+    price_in: 0.8
+    price_out: 2.0
     disable_thinking: true
 
   reviewer:      # 内容审核（拦截广告/垃圾/版权高风险，质量优先）
@@ -28,8 +28,16 @@ tasks:
 
   summarizer:    # 文档一句话摘要（批量）
     provider: dashscope
-    model: qwen-flash
+    model: qwen-plus
     batch: true
-    price_in: 0.36
-    price_out: 1.9
+    price_in: 0.8
+    price_out: 2.0
+    disable_thinking: true
+
+  scout:         # 补采侦察：把学生问题转成站内检索式（小输出，JSON）
+    provider: dashscope
+    model: qwen-plus
+    batch: false
+    price_in: 0.8
+    price_out: 2.0
     disable_thinking: true

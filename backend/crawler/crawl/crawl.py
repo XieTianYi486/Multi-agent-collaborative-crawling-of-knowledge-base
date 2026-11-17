@@ -95,7 +95,7 @@ def _crawl_site(session, site: Site, http: httpx.Client, stats: CrawlStats) -> N
 
     for item in items:
         try:
-            if _ingest_item(session, site, item):
+            if ingest_item(session, site, item):
                 site_new += 1
                 stats.new_docs += 1
             else:
@@ -115,14 +115,14 @@ def _crawl_site(session, site: Site, http: httpx.Client, stats: CrawlStats) -> N
     log.info("站点 %s 完成：新增 %d，去重 %d", site.code, site_new, site_dup)
 
 
-def _ingest_item(session, site: Site, item) -> bool:
-    """三层去重后入库。返回是否为新增文档。"""
+def ingest_item(session, site: Site, item) -> Document | None:
+    """三层去重后入库。返回新增的 Document；重复/无内容返回 None。"""
     settings = get_settings()
 
     # 1. URL 去重
     uh = url_hash(item.url)
     if repo.find_document_by_url_hash(session, uh):
-        return False
+        return None
 
     # 2. 正文抽取（HTML → Markdown + 纯文本）
     text = item.content_text or ""
@@ -138,15 +138,15 @@ def _ingest_item(session, site: Site, item) -> bool:
         md = ""
 
     if not text and not item.title:
-        return False  # 无实质内容，跳过
+        return None  # 无实质内容，跳过
 
     # 3. 内容哈希去重 + SimHash 近重复
     ch = content_hash(text or item.title)
     if repo.find_document_by_content_hash(session, ch):
-        return False
+        return None
     sh = simhash64(text or item.title)
     if repo.find_near_dup(session, sh, settings.simhash_near_window_days, settings.simhash_hamming_threshold):
-        return False
+        return None
 
     # 落盘：Markdown（仅低风险全文）与原文 HTML
     md_rel = ""
@@ -171,7 +171,7 @@ def _ingest_item(session, site: Site, item) -> bool:
         meta_json=metadata.build_meta(site, item),
     )
     session.add(doc)
-    return True
+    return doc
 
 
 def _save_data_file(subdir: str, name_hash: str, ext: str, content: str) -> str:

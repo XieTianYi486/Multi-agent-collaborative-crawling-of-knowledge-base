@@ -22,6 +22,7 @@
       <el-tab-pane label="待处理" name="0" />
       <el-tab-pane label="已触发采集" name="1" />
       <el-tab-pane label="已完成" name="2" />
+      <el-tab-pane label="未匹配资料" name="4" />
       <el-tab-pane label="已忽略" name="3" />
     </el-tabs>
 
@@ -75,9 +76,9 @@ const pageSize = ref(20)
 const total = ref(0)
 const activeStatus = ref('')
 
-function statusMeta(status: number): { label: string; type: 'success' | 'warning' | 'info' | 'primary' } {
+function statusMeta(status: number): { label: string; type: 'success' | 'warning' | 'info' | 'primary' | 'danger' } {
   const label = COLLECTION_STATUS[status] || '未知'
-  const type = status === 2 ? 'success' : status === 1 ? 'primary' : status === 0 ? 'warning' : 'info'
+  const type = status === 2 ? 'success' : status === 1 ? 'primary' : status === 0 ? 'warning' : status === 4 ? 'danger' : 'info'
   return { label, type }
 }
 

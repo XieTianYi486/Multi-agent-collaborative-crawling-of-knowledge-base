@@ -1,0 +1,39 @@
+# 官方/权威入门教程种子源
+#
+# 补采问题里出现 keywords 里的词时，这些 URL 会作为高优先候选直接入队，
+# 保证「入门学习」类需求能稳定补到成体系的权威材料，而不是只靠 GitHub 搜索碰运气。
+#
+# 注意：抓取前仍会检查 robots.txt 与站点风险等级；未备案域名按 medium 处理
+# （仅节选前 500 字 + 原文链接），不会整篇搬运。
+seeds:
+  - keywords: ["java"]
+    title: "Java 官方教程（dev.java）"
+    urls:
+      - https://dev.java/learn/
+      - https://docs.oracle.com/javase/tutorial/
+
+  - keywords: ["python"]
+    title: "Python 官方入门教程"
+    urls:
+      - https://docs.python.org/zh-cn/3/tutorial/
+
+  - keywords: ["c++", "cpp"]
+    title: "cppreference 中文版 C++ 参考"
+    urls:
+      - https://zh.cppreference.com/w/cpp
+
+  - keywords: ["数据结构", "算法"]
+    title: "OI Wiki 数据结构与算法"
+    urls:
+      - https://oi-wiki.org/
+
+  - keywords: ["spring", "springboot", "spring boot"]
+    title: "Spring Boot 官方入门指南"
+    urls:
+      - https://spring.io/quickstart
+      - https://docs.spring.io/spring-boot/index.html
+
+  - keywords: ["mysql", "sql", "数据库"]
+    title: "MySQL 官方参考手册"
+    urls:
+      - https://dev.mysql.com/doc/refman/8.4/en/

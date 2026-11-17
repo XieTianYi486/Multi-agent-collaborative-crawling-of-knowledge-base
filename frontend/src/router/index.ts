@@ -16,6 +16,12 @@ const router = createRouter({
       meta: { guest: true },
     },
     {
+      path: '/help',
+      name: 'Help',
+      component: () => import('@/views/help/HelpPage.vue'),
+      meta: { title: '使用帮助', public: true },
+    },
+    {
       path: '/',
       component: () => import('@/components/layout/MainLayout.vue'),
       children: [
@@ -185,8 +191,8 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 未登录用户访问需要认证的页面 → 跳转到登录页
-  if (!to.meta.guest && !token) {
+  // 未登录用户访问需要认证的页面 → 跳转到登录页（public 页面除外）
+  if (!to.meta.guest && !to.meta.public && !token) {
     next('/login')
     return
   }

@@ -72,6 +72,7 @@
               <el-radio-button :value="0">待处理 {{ stats['0'] || 0 }}</el-radio-button>
               <el-radio-button :value="1">已触发 {{ stats['1'] || 0 }}</el-radio-button>
               <el-radio-button :value="2">已完成 {{ stats['2'] || 0 }}</el-radio-button>
+              <el-radio-button :value="4">未匹配 {{ stats['4'] || 0 }}</el-radio-button>
               <el-radio-button :value="3">已忽略 {{ stats['3'] || 0 }}</el-radio-button>
             </el-radio-group>
           </div>
@@ -195,6 +196,7 @@ function formatTime(t: string | null): string {
 function statusTagType(status: number): string {
   if (status === 2) return 'success'
   if (status === 1) return 'warning'
+  if (status === 4) return 'danger'
   if (status === 3) return 'info'
   return 'primary'
 }

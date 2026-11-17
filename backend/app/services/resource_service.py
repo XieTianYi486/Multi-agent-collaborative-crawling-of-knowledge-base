@@ -124,15 +124,17 @@ def _search_videos(db: Session, keywords: List[str]) -> List[Dict]:
 
 
 def search_resources(
-    db: Session, question: str, security_level: int = 1
+    db: Session, question: str, security_level: int = 1, force: bool = False
 ) -> List[Dict]:
     """
     根据问句检索可跳转的资料条目。
 
     非资料类提问（如"什么是中断"）返回空列表，保持纯问答体验；
     检索异常不影响问答主流程，由调用方兜底。
+
+    force=True 供 Agent 工具调用：意图已由上层判定，跳过关键词门控。
     """
-    if not _has_intent(question):
+    if not force and not _has_intent(question):
         return []
     keywords = _keywords(question)
     if not keywords:

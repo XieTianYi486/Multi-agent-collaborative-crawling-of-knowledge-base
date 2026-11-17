@@ -8,8 +8,8 @@ from datetime import datetime, date
 from typing import Optional
 
 from sqlalchemy import (
-    Column, Integer, Integer, String, Text,
-    DateTime, Date, JSON, ForeignKey
+    Column, Integer, String, Text,
+    DateTime, Date, JSON, ForeignKey, Index
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -56,6 +56,14 @@ class Document(Base):
     核心字段：版本管理、密级、分类、标签
     """
     __tablename__ = "documents"
+    __table_args__ = (
+        # 列表页固定按「已发布 + 已通过」过滤并按创建时间倒序，
+        # 走该联合索引可避免每次全表扫描后建临时排序树
+        Index(
+            "ix_documents_visible_created",
+            "status", "review_status", "created_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(

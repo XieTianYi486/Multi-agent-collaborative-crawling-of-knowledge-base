@@ -18,5 +18,5 @@ class CollectionRequestCreate(BaseModel):
 
 class CollectionRequestUpdate(BaseModel):
     """更新补采需求（状态 / 备注）"""
-    status: Optional[int] = Field(default=None, description="0待处理 1已触发 2已完成 3已忽略")
+    status: Optional[int] = Field(default=None, description="0待处理 1已触发 2已完成 3已忽略 4未匹配资料")
     note: Optional[str] = Field(default=None, max_length=2000, description="处理备注")

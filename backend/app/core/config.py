@@ -20,8 +20,11 @@ class Settings(BaseSettings):
     # ==================== 应用基础配置 ====================
     APP_NAME: str = "人工智能学院教学知识库"
     APP_VERSION: str = "1.0.0"
-    APP_DESCRIPTION: str = "多智能体协作爬取的嵌入式开发教学知识库（ESP32 / ESP-IDF / 树莓派 / 电子电路 / 物联网教学资料检索）"
-    DEBUG: bool = True
+    APP_DESCRIPTION: str = "多智能体协作爬取的人工智能学院教学知识库（嵌入式与物联网 / 软件工程与编程技术资料检索）"
+    # 默认关闭 DEBUG：未配置 .env 直接启动时按生产模式运行（本地开发在 .env 显式开启）
+    DEBUG: bool = False
+    # 生产安全自检豁免开关：仅限本地开发使用；生产部署严禁开启（deploy.sh 会强制写回 false）
+    SKIP_SAFETY_CHECK: bool = False
     SECRET_KEY: str = "change-this-to-a-random-secret-key-in-production"
 
     # ==================== 服务端口 ====================

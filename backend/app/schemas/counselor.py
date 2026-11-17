@@ -30,3 +30,8 @@ class CounselorFeedbackRequest(BaseModel):
     session_id: str = Field(..., description="会话ID")
     feedback: int = Field(..., ge=0, le=2, description="0=取消, 1=点赞, 2=点踩")
     reason: Optional[str] = Field(default=None, max_length=255, description="反馈原因")
+
+
+class CounselorActionConfirmRequest(BaseModel):
+    """确认执行 AI 助手提议的写操作"""
+    action_token: str = Field(..., min_length=10, max_length=4000, description="待确认操作令牌")

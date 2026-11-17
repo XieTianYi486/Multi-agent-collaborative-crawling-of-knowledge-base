@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # 人工智能学院教学知识库 - 本地一键更新
 # 用法：powershell -ExecutionPolicy Bypass -File deploy\update.ps1
 #       powershell -ExecutionPolicy Bypass -File deploy\update.ps1 -SkipBuild
@@ -38,7 +38,7 @@ Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path (Join-Path $stage "deploy") -Force | Out-Null
 Set-Content -Path (Join-Path $stage "deploy\VERSION") -Value $stamp -Encoding ascii
 
-tar -czf $pkg -C $root frontend/dist backend/app backend/requirements.txt deploy/update.sh deploy/sync_content.py deploy/materials -C $stage deploy/VERSION
+tar -czf $pkg --exclude=backend/crawler/data --exclude=__pycache__ --exclude=*.pyc -C $root frontend/dist backend/app backend/crawler backend/requirements.txt deploy/update.sh deploy/sync_content.py deploy/materials -C $stage deploy/VERSION
 if ($LASTEXITCODE -ne 0) { throw "tar packaging failed" }
 $size = "{0:N1} MB" -f ((Get-Item $pkg).Length / 1MB)
 Write-Host "    package: $pkg ($size)"

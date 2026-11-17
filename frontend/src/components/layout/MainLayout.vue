@@ -53,7 +53,7 @@
           class="nav-item"
           :class="{ active: currentRoute === '/my-students' }"
         >
-          <el-icon :size="20"><UserFilled /></el-icon>
+          <el-icon :size="20"><Avatar /></el-icon>
           <span v-if="!isCollapse" class="nav-label">我的学生</span>
         </router-link>
 
@@ -148,11 +148,14 @@
       <!-- 底部操作 -->
       <div class="sidebar-footer">
         <button class="footer-btn collapse-btn" @click="isCollapse = !isCollapse" title="收起/展开">
-          <el-icon :size="18"><component :is="isCollapse ? 'Expand' : 'Fold'" /></el-icon>
+          <el-icon :size="18"><component :is="isCollapse ? Expand : Fold" /></el-icon>
         </button>
         <button class="footer-btn" @click="themeStore.toggle()" title="切换主题">
-          <el-icon :size="18"><component :is="themeStore.isDark ? 'Sunny' : 'Moon'" /></el-icon>
+          <el-icon :size="18"><component :is="themeStore.isDark ? Sunny : Moon" /></el-icon>
         </button>
+        <router-link to="/help" class="footer-btn" title="使用帮助">
+          <el-icon :size="18"><QuestionFilled /></el-icon>
+        </router-link>
         <button v-if="!isCollapse" class="footer-btn logout-btn" @click="authStore.logout()" title="退出登录">
           <el-icon :size="18"><SwitchButton /></el-icon>
           <span class="nav-label">退出</span>
@@ -172,7 +175,7 @@
         </button>
         <span class="mobile-bar-title">{{ pageTitle }}</span>
         <button class="mobile-bar-btn" aria-label="切换主题" @click="themeStore.toggle()">
-          <el-icon :size="18"><component :is="themeStore.isDark ? 'Sunny' : 'Moon'" /></el-icon>
+          <el-icon :size="18"><component :is="themeStore.isDark ? Sunny : Moon" /></el-icon>
         </button>
       </header>
 
@@ -220,9 +223,9 @@ import type { NotificationItem } from '@/api/notification'
 import FloatingCounselor from '@/components/counselor/FloatingCounselor.vue'
 import {
   Expand, Fold, Sunny, Moon, Reading, SwitchButton,
-  ChatDotRound, Document, User, List, DataAnalysis, UserFilled,
-  FolderOpened, Avatar, OfficeBuilding, Bell, Tickets, Stamp, Lock, Download, Refresh,
-  Service, VideoCamera,
+  ChatDotRound, Document, User, List, DataAnalysis, UserFilled, Avatar,
+  FolderOpened, OfficeBuilding, Bell, Tickets, Stamp, Lock, Download, Refresh,
+  Service, VideoCamera, QuestionFilled,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

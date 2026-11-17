@@ -5,11 +5,12 @@
 
 import os
 import uuid
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional, BinaryIO
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 
 from app.core.config import settings
@@ -25,6 +26,8 @@ from app.schemas.document import DocumentUpdate
 from app.tasks.document_tasks import process_document_async, reindex_document_async
 from app.rag.ingestion import remove_document_from_index
 from app.db.cache import cache
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentService:
@@ -95,6 +98,21 @@ class DocumentService:
         stored = doc.file_path or ""
         if stored and os.path.exists(stored):
             return stored
+
+        # 跨操作系统路径：文档在开发机（Windows）入库时存的是
+        # E:\...\backend\uploads\import_xxx\分类\文件.md 这类绝对路径，
+        # 部署到 Linux 后原路径必然不存在，但文件在服务器的 UPLOAD_DIR 下
+        # 相对位置是一致的，因此截取 uploads/ 之后的部分重新拼接。
+        normalized = stored.replace("\\", "/")
+        marker = "/uploads/"
+        if marker in normalized:
+            relative = normalized.rsplit(marker, 1)[1]
+            base = Path(settings.UPLOAD_DIR).resolve()
+            candidate = (base / relative).resolve()
+            if base == candidate or base in candidate.parents:
+                if candidate.exists():
+                    return str(candidate)
+
         fallback = Path(settings.UPLOAD_DIR) / Path(stored).name
         return str(fallback) if fallback.exists() else None
 
@@ -162,7 +180,8 @@ class DocumentService:
         sort: latest(最新) / oldest(最早) / title(标题) / size_desc(大小降序) / size_asc(大小升序)
         document_ids: 限定文档 ID 集合（收藏夹筛选；空列表表示无匹配结果）
         """
-        query = db.query(Document)
+        # 列表页每条都要展示分类名，预加载避免逐条懒加载（N+1）
+        query = db.query(Document).options(joinedload(Document.category))
 
         if keyword:
             # 全文检索：标题 / 文件名 / 分块正文三路匹配
@@ -280,6 +299,12 @@ class DocumentService:
         from datetime import datetime, timezone
         doc = cls.get_document(db, doc_id)
         if action == "approve":
+            # 防止把尚未处理完成的文档直接发布：发布后学生能看到条目，
+            # 但没有任何分块可检索/可阅读，形成"可见但搜不到"的空壳文档
+            if doc.status == 0:
+                raise ValidationException("文档仍在处理中，请等待处理完成后再审核")
+            if doc.status != 1 or not doc.chunk_count:
+                raise ValidationException("文档没有可用内容（处理失败或为空），不能发布")
             doc.review_status = 2
             doc.status = 1
             doc.review_comment = comment
@@ -329,25 +354,39 @@ class DocumentService:
         return doc
 
     @classmethod
-    def delete_document(cls, db: Session, doc_id: int) -> None:
-        """删除文档（同时清理文件和分块数据）"""
+    def delete_document(cls, db: Session, doc_id: int) -> Optional[str]:
+        """
+        删除文档记录（分块、版本随外键级联删除）
+
+        向量库 / BM25 索引与物理文件的清理耗时较长（BM25 索引为几十 MB，
+        每次落盘要数秒），并发删除时会互相等待导致请求超时、看起来"删不掉"，
+        因此交给调用方用后台任务执行 cleanup_document_assets。
+
+        返回: 该文档的物理文件路径（供后台清理使用）
+        """
         doc = cls.get_document(db, doc_id)
-
-        # 从向量库和 BM25 索引中移除
-        try:
-            remove_document_from_index(doc.id)
-        except Exception:
-            pass
-
-        # 删除物理文件
-        try:
-            os.remove(doc.file_path)
-        except FileNotFoundError:
-            pass
-
-        # 删除数据库记录（CASCADE 会删除 chunks 和 versions）
+        file_path = doc.file_path
         db.delete(doc)
         db.flush()
+        cls._invalidate_qa_cache()
+        return file_path
+
+    @classmethod
+    def cleanup_document_assets(cls, doc_id: int, file_path: Optional[str]) -> None:
+        """删除文档后的异步收尾：清理向量库 / BM25 索引与物理文件。"""
+        try:
+            remove_document_from_index(doc_id)
+        except Exception as exc:
+            logger.warning("清理文档索引失败 doc=%s: %s", doc_id, exc)
+
+        if file_path:
+            try:
+                os.remove(file_path)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                # 跨平台路径（如 Windows 下入库的绝对路径）或权限问题不应影响删除结果
+                logger.warning("删除文档文件失败 doc=%s path=%s: %s", doc_id, file_path, exc)
         cls._invalidate_qa_cache()
 
     @classmethod

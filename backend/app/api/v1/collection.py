@@ -24,10 +24,10 @@ from app.schemas.common import APIResponse, PaginatedData
 
 router = APIRouter(prefix="/collection", tags=["补采闭环"])
 
-VALID_STATUS = {0, 1, 2, 3}
+VALID_STATUS = {0, 1, 2, 3, 4}
 VALID_REASON = {"missed", "negative_feedback"}
 
-STATUS_LABEL = {0: "待处理", 1: "已触发采集", 2: "已完成", 3: "已忽略"}
+STATUS_LABEL = {0: "待处理", 1: "已触发采集", 2: "已完成", 3: "已忽略", 4: "未匹配资料"}
 
 # 未关闭的需求（待处理 / 已触发采集）用于去重
 OPEN_STATUS = (0, 1)
@@ -268,7 +268,7 @@ def update_request(
         req.note = data.note
 
     if data.status is not None and data.status != old_status and req.created_by != current_user.id:
-        label = {0: "待处理", 1: "已触发采集", 2: "已完成", 3: "已忽略"}.get(req.status, "已更新")
+        label = {0: "待处理", 1: "已触发采集", 2: "已完成", 3: "已忽略", 4: "未匹配资料"}.get(req.status, "已更新")
         notify(
             db, req.created_by, "collection", "补采需求状态更新",
             f"你提交的补采「{req.question[:40]}」状态变为：{label}。",
@@ -286,18 +286,13 @@ def run_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_knowledge_admin),
 ):
-    """触发一次爬虫采集流水线，并把该需求标记为已触发采集。"""
+    """触发一次定向补采流水线：侦察 → 定向抓取 → 入库 → 自动闭环。
+
+    先把需求置为「已触发采集」再启动流水线：discover 步骤只处理 status=1 的需求。
+    """
     req = db.query(CollectionRequest).filter(CollectionRequest.id == request_id).first()
     if not req:
         return APIResponse(code=1, message="补采需求不存在")
-
-    from crawler import runner
-
-    started = runner.start_run(trigger="manual")
-    if not started:
-        return APIResponse(code=0, message="流水线已在运行中，请稍后再试", data={
-            "started": False,
-        })
 
     req.status = 1
     if req.created_by != current_user.id:
@@ -307,4 +302,16 @@ def run_request(
             "/my-collections",
         )
     db.commit()
-    return APIResponse(code=0, message="已触发采集流水线", data={"started": True})
+
+    from crawler import runner
+
+    started = runner.start_run(
+        trigger="collection",
+        ctx={"request_ids": [req.id], "target_limit": 6, "skip_crawl": True},
+    )
+    if not started:
+        return APIResponse(code=0, message="流水线已在运行中，该需求已入队，将在本轮或下次运行时处理", data={
+            "started": False,
+        })
+
+    return APIResponse(code=0, message="已触发补采流水线", data={"started": True})

@@ -469,10 +469,16 @@ onMounted(() => {
 async function handleDelete(row: any) {
   try {
     await ElMessageBox.confirm(`确定删除 "${row.title}"？此操作不可逆`, '确认删除')
+  } catch {
+    return // 用户取消
+  }
+  try {
     await client.delete(`/documents/${row.id}`)
     ElMessage.success('文档已删除')
     loadData()
-  } catch { /* 取消 */ }
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '删除失败，请稍后重试')
+  }
 }
 
 // ==================== 文档有效期 ====================

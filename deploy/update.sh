@@ -27,7 +27,26 @@ else
 fi
 
 echo "==> 2/5 解压更新包"
-tar -xzf "$PKG" -C "$APP_DIR"
+# 先解压到临时目录再整体替换前端资源：
+# tar 保留源文件时间戳，不能用 mtime 区分新旧——-SkipBuild 复用的旧 dist
+# 会在解压后被整批误删（index.html 引用不存在的资源，页面白屏）。
+# 前端资源整体替换（dist 完整包含在更新包内），其余内容直接解压覆盖。
+stage=$(mktemp -d)
+tar -xzf "$PKG" -C "$stage"
+if [[ ! -f "$stage/frontend/dist/index.html" ]]; then
+  echo "[ERROR] 更新包缺少 frontend/dist/index.html，已中止"
+  rm -rf "$stage"
+  exit 1
+fi
+OLD_COUNT=$(find "$APP_DIR/frontend/dist/assets" -type f 2>/dev/null | wc -l)
+rm -rf "$APP_DIR/frontend/dist/assets"
+mkdir -p "$APP_DIR/frontend/dist"
+cp -a "$stage/frontend/dist/." "$APP_DIR/frontend/dist/"
+NEW_COUNT=$(find "$APP_DIR/frontend/dist/assets" -type f | wc -l)
+echo "    前端资源整体替换：$OLD_COUNT -> $NEW_COUNT 个文件"
+rm -rf "$stage/frontend/dist"
+cp -a "$stage/." "$APP_DIR/"
+rm -rf "$stage"
 
 echo "==> 3/5 检查依赖是否需要重装"
 AFTER=$(md5sum "$APP_DIR/backend/requirements.txt" | awk '{print $1}')
@@ -39,6 +58,10 @@ else
 fi
 
 chown -R kb:kb "$APP_DIR/backend/app" "$APP_DIR/frontend/dist"
+# 爬虫代码（含 agents/crawl/sync）也要随包更新；data 目录是运行库，权限单独保证
+chown -R kb:kb "$APP_DIR/backend/crawler"
+mkdir -p "$APP_DIR/backend/crawler/data"
+chown -R kb:kb "$APP_DIR/backend/crawler/data"
 chmod -R a+rX "$APP_DIR/frontend/dist"
 chmod a+rX "$APP_DIR/deploy/materials" || true
 

@@ -41,6 +41,12 @@ import app.models.chat  # noqa: E402, F401
 import app.models.ticket  # noqa: E402, F401
 import app.models.audit  # noqa: E402, F401
 import app.models.video  # noqa: E402, F401
+import app.models.collection  # noqa: E402, F401
+import app.models.notification  # noqa: E402, F401
+import app.models.teaching  # noqa: E402, F401
+import app.models.counselor  # noqa: E402, F401
+import app.models.announcement  # noqa: E402, F401
+import app.models.api_client  # noqa: E402, F401
 
 from app.db.sqlite import init_db, engine, SessionLocal  # noqa: E402
 

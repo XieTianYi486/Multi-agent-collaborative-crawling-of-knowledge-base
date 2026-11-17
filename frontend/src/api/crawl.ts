@@ -65,13 +65,18 @@ export interface CrawlUsageTask {
 
 export const CRAWL_STEP_LABELS: Record<string, string> = {
   crawl: '采集',
+  discover: '补采侦察',
+  targeted: '定向抓取',
   tagger: '打标（分类）',
   review: '审核',
   summarize: '摘要',
   kb_sync: '入库知识库',
+  resolve: '补采闭环',
 }
 
-export const CRAWL_STEP_ORDER = ['crawl', 'tagger', 'review', 'summarize', 'kb_sync']
+export const CRAWL_STEP_ORDER = [
+  'crawl', 'discover', 'targeted', 'tagger', 'review', 'summarize', 'kb_sync', 'resolve',
+]
 
 export const crawlApi = {
   overview: () => client.get('/crawler/overview'),

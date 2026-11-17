@@ -80,6 +80,11 @@ export const counselorApi = {
       feedback,
       reason: reason || null,
     }),
+  /** 确认执行助手提议的写操作（提交补采 / 创建工单） */
+  confirmAction: (actionToken: string) =>
+    send<any>('POST', '/api/v1/counselor/actions/confirm', {
+      action_token: actionToken,
+    }),
 }
 
 /** AI 助手检索到的可跳转资料（文档 / 视频） */
@@ -92,23 +97,52 @@ export interface CounselorResource {
   url: string
 }
 
+/** 助手工具调用步骤 */
+export interface CounselorToolStep {
+  id?: string
+  name: string
+  label: string
+  ok?: boolean
+  summary?: string
+  args?: Record<string, any>
+  data?: Record<string, any>
+}
+
+/** 待用户确认的写操作 */
+export interface CounselorAction {
+  tool: string
+  label: string
+  args: Record<string, any>
+  action_token: string
+  expires_in: number
+  loading?: boolean
+  done?: boolean
+  ok?: boolean
+  resultText?: string
+  error?: string
+}
+
 interface CounselorStreamCallbacks {
   onToken: (token: string) => void
   onSources: (sources: CounselorSource[]) => void
   onSensitive?: (masked: string, hits: any[]) => void
+  onToolCall?: (step: CounselorToolStep) => void
+  onToolResult?: (step: CounselorToolStep) => void
+  onConfirmation?: (action: CounselorAction) => void
   onDone: (result: {
     full_answer: string
     mode: string
     sources: CounselorSource[]
     resources?: CounselorResource[]
     session_id?: string
+    tool_trace?: CounselorToolStep[]
   }) => void
   onError: (error: string) => void
 }
 
 /**
  * AI 助手流式提问（SSE）
- * events: token / sources / done / error / sensitive
+ * events: token / sources / tool_call / tool_result / confirmation_required / done / error / sensitive
  */
 export function counselorStream(
   question: string,
@@ -160,6 +194,15 @@ export function counselorStream(
                   break
                 case 'sources':
                   cb.onSources(parsed)
+                  break
+                case 'tool_call':
+                  cb.onToolCall?.(parsed)
+                  break
+                case 'tool_result':
+                  cb.onToolResult?.(parsed)
+                  break
+                case 'confirmation_required':
+                  cb.onConfirmation?.(parsed)
                   break
                 case 'sensitive':
                   cb.onSensitive?.(parsed.full_answer, parsed.hits || [])

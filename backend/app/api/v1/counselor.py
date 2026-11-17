@@ -20,6 +20,8 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+from app.agent.actions import consume_action_token
+from app.agent.registry import RISK_WRITE, ToolContext, get_tool_registry
 from app.db.sqlite import get_db, SessionLocal
 from app.api.deps import get_current_active_user
 from app.core.exceptions import NotFoundException, ValidationException
@@ -28,7 +30,7 @@ from app.models.user import User, utcnow
 from app.models.counselor import CounselorSession, CounselorMessage, CounselorLog
 from app.schemas.common import APIResponse, PaginatedData
 from app.schemas.counselor import (
-    CounselorAskRequest, CounselorSessionCreate,
+    CounselorAskRequest, CounselorActionConfirmRequest, CounselorSessionCreate,
     CounselorSessionUpdate, CounselorFeedbackRequest,
 )
 from app.services.counselor_service import get_counselor_service
@@ -107,6 +109,7 @@ def ask_counselor(
         )
 
     chat_history = _load_history(db, request.session_id)
+    session_id = request.session_id or _generate_session_id()
 
     # 资料类提问额外返回可跳转的文档/视频条目（普通概念提问返回空）
     resources = search_resources(db, request.question, security_level)
@@ -114,6 +117,8 @@ def ask_counselor(
     result = counselor.ask(
         question=request.question, chat_history=chat_history,
         security_level=security_level,
+        user_id=user_id, username=username, role_code=role_code,
+        session_id=session_id,
     )
 
     # 回答脱敏
@@ -122,7 +127,8 @@ def ask_counselor(
     )
     result["answer"] = masked_answer
 
-    session_id = request.session_id or _generate_session_id()
+    # 工具链路可能已返回更精确的资料卡片，优先使用
+    resources = result.get("resources") or resources
     if request.session_id:
         session = db.query(CounselorSession).filter(
             CounselorSession.id == session_id,
@@ -158,6 +164,8 @@ def ask_counselor(
         "resources": resources,
         "mode": result.get("mode"),
         "session_id": session_id,
+        "action": result.get("action"),
+        "tool_trace": result.get("tool_trace", []),
     })
 
 
@@ -238,7 +246,10 @@ async def ask_counselor_stream(
             yield f"event: done\ndata: {json.dumps({'full_answer': BLOCKED_QUESTION_RESPONSE, 'mode': 'blocked', 'sources': []}, ensure_ascii=False)}\n\n"
         return StreamingResponse(blocked_stream(), media_type="text/event-stream")
 
-    stream_result = {"full_answer": "", "sources": [], "mode": "", "ok": False, "latency": {}}
+    stream_result = {
+        "full_answer": "", "sources": [], "resources": [], "tool_trace": [],
+        "mode": "", "ok": False, "latency": {},
+    }
 
     async def event_stream():
         """纯 SSE 流式生成器 —— token 先脱敏再推送"""
@@ -269,10 +280,22 @@ async def ask_counselor_stream(
             buffer = ""
             return out
 
+        def mask_obj(value):
+            """对工具事件里的字符串字段做脱敏（保留 JSON 结构）"""
+            if isinstance(value, str):
+                return mask_and_record(value)
+            if isinstance(value, list):
+                return [mask_obj(v) for v in value]
+            if isinstance(value, dict):
+                return {k: mask_obj(v) for k, v in value.items()}
+            return value
+
         try:
             async for event in counselor.ask_stream(
                 question=question, chat_history=chat_history,
                 security_level=security_level,
+                user_id=user_id, username=username, role_code=role_code,
+                session_id=session_id,
             ):
                 if event["type"] == "token":
                     buffer += event["data"]
@@ -287,6 +310,29 @@ async def ask_counselor_stream(
                         continue
                     stream_result["full_answer"] += safe
                     yield f"event: token\ndata: {json.dumps({'token': safe}, ensure_ascii=False)}\n\n"
+
+                elif event["type"] == "tool_call":
+                    payload = dict(event["data"])
+                    payload["args"] = mask_obj(payload.get("args") or {})
+                    yield f"event: tool_call\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                elif event["type"] == "tool_result":
+                    payload = dict(event["data"])
+                    if payload.get("summary"):
+                        payload["summary"] = mask_and_record(payload["summary"])
+                    payload["data"] = mask_obj(payload.get("data") or {})
+                    stream_result["tool_trace"].append({
+                        "name": payload.get("name"),
+                        "label": payload.get("label"),
+                        "ok": payload.get("ok"),
+                        "summary": payload.get("summary", ""),
+                    })
+                    yield f"event: tool_result\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                elif event["type"] == "confirmation_required":
+                    payload = dict(event["data"])
+                    payload["args"] = mask_obj(payload.get("args") or {})
+                    yield f"event: confirmation_required\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
                 elif event["type"] == "sources":
                     # 先冲刷窗口尾部，保证正文 token 全部在 sources 之前推送
@@ -325,7 +371,12 @@ async def ask_counselor_stream(
 
                     data["full_answer"] = stream_result["full_answer"]
                     data["session_id"] = session_id
-                    data["resources"] = resources
+                    # 工具链路返回的资料卡片比关键词预检索更准确，优先使用
+                    final_resources = data.get("resources") or resources
+                    data["resources"] = final_resources
+                    data["tool_trace"] = data.get("tool_trace") or stream_result["tool_trace"]
+                    stream_result["resources"] = final_resources
+                    stream_result["tool_trace"] = data["tool_trace"]
                     stream_result["ok"] = True
                     yield f"event: done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -381,6 +432,54 @@ async def ask_counselor_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         background=BackgroundTask(save_assistant_message),
+    )
+
+
+# ==================== 写操作确认 ====================
+
+@router.post("/actions/confirm", response_model=APIResponse, summary="确认执行助手提议的操作")
+def confirm_counselor_action(
+    request: CounselorActionConfirmRequest,
+    current_user: User = Depends(rate_limit_chat),
+):
+    """
+    两阶段写操作的第二阶段。
+
+    模型只能"提议"，真正执行必须由用户点击确认并携带短时令牌调用本接口。
+    令牌绑定用户、工具名与参数，5 分钟过期且只能消费一次。
+    """
+    payload = consume_action_token(request.action_token)
+
+    if str(payload.get("sub")) != str(current_user.id):
+        raise ValidationException("无权执行该操作")
+
+    tool_name = payload.get("tool") or ""
+    registry = get_tool_registry()
+    spec = registry.get(tool_name)
+    if spec is None or spec.risk != RISK_WRITE:
+        raise ValidationException("无效的操作")
+
+    role_code = current_user.role.code if current_user.role else ""
+    if role_code not in spec.roles:
+        raise ValidationException("当前账号无权执行该操作")
+
+    ctx = ToolContext(
+        user_id=current_user.id,
+        username=current_user.username,
+        role_code=role_code,
+        security_level=_get_security_level(role_code),
+        session_id=payload.get("sid") or None,
+    )
+    result = registry.execute(spec, ctx, payload.get("args") or {})
+
+    return APIResponse(
+        code=0 if result.get("ok") else 3002,
+        message=result.get("summary") or "操作已处理",
+        data={
+            "tool": tool_name,
+            "summary": result.get("summary"),
+            "result": result.get("data") or {},
+        },
     )
 
 

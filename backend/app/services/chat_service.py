@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -40,6 +41,11 @@ REFUSAL_FALLBACK_ANSWER = (
     "抱歉，知识库中未找到与您问题相关的资料。"
     "建议您换个问法再试，或等待爬取流水线收录更多内容后再次查询。"
 )
+
+# 查询改写 + 多路检索共用的线程池。
+# 这些调用是同步 HTTP / 本地计算，必须离开事件循环执行（见 ask_stream）；
+# 全局共享一个池，避免每个问答请求各自创建线程池导致线程数随并发翻倍。
+_RETRIEVAL_POOL = ThreadPoolExecutor(max_workers=32, thread_name_prefix="qa-retrieval")
 
 
 class ChatService:
@@ -200,7 +206,7 @@ class ChatService:
                 "chapter": c.get("chapter", ""),
                 "page": c.get("page", 1),
                 "snippet": c.get("content", "")[:200],
-                "score": round(c.get("score", 0), 4),
+                "score": round(float(c.get("score", 0) or 0), 4),
                 "source_url": c.get("source_url", ""),
                 "authority_weight": c.get("authority_weight", 1.0),
                 "authority_label": c.get("authority_label", ""),
@@ -274,7 +280,10 @@ class ChatService:
         # === 第0.25步：问答缓存（仅单轮对话；多轮历史影响答案，不缓存）===
         cache_key = None
         if not chat_history:
-            cached = self._get_cached_answer(question, security_level, scope_sig)
+            # 缓存未命中时会回落到读磁盘，放在线程池里避免阻塞事件循环
+            cached = await run_in_threadpool(
+                self._get_cached_answer, question, security_level, scope_sig
+            )
             if cached:
                 yield {"type": "token", "data": cached["answer"]}
                 yield {"type": "sources", "data": cached.get("sources", [])}
@@ -295,8 +304,10 @@ class ChatService:
         # 二者互不依赖，并行执行可把首字前的等待时间压缩约一半。
         t_retrieval_start = time.time()
         try:
-            candidates, query_errors = self._retrieve_with_rewrite(
-                question, chat_history, security_level
+            # 改写/embedding/检索都是同步调用，必须放到线程池，
+            # 否则会把整个 uvicorn 事件循环卡住（所有在线用户的浏览请求一起排队）
+            candidates, query_errors = await run_in_threadpool(
+                self._retrieve_with_rewrite, question, chat_history, security_level
             )
             if not candidates and query_errors:
                 raise RetrievalException("知识库检索失败: " + "; ".join(query_errors))
@@ -306,16 +317,24 @@ class ChatService:
         t_retrieval = (time.time() - t_retrieval_start) * 1000
 
         # === 第1.5步：发布/密级二次过滤 ===
-        visible_ids = self._visible_doc_ids(security_level, category_ids, document_ids)
+        # 同步查询数据库，同样移出事件循环
+        visible_ids = await run_in_threadpool(
+            self._visible_doc_ids, security_level, category_ids, document_ids
+        )
         candidates = [c for c in candidates if c.get("document_id") in visible_ids]
 
         # === 第2步：拒答兜底（无任何检索结果时才短路）===
         if not candidates:
             total_ms = round((time.time() - t_start) * 1000)
+            # 注意：拒答文案必须以 token 推给前端。done 事件里的 answer 只用于落库，
+            # 前端正文仅拼接 token，只发 done 会导致回答气泡空白。
+            yield {"type": "token", "data": REFUSAL_FALLBACK_ANSWER}
+            yield {"type": "sources", "data": []}
             yield {
                 "type": "done",
                 "data": {
                     "answer": REFUSAL_FALLBACK_ANSWER,
+                    "full_answer": REFUSAL_FALLBACK_ANSWER,
                     "sources": [],
                     "status": "not_found",
                     "latency": {
@@ -328,7 +347,10 @@ class ChatService:
 
         # === 第3步：LLM 重排序 ===
         rerank_candidates = candidates[:settings.RERANK_CANDIDATES]
-        top_chunks = self.reranker.rerank(question, rerank_candidates)
+        # 重排序内部是同步 LLM 调用（约 1-2 秒），必须在线程池执行
+        top_chunks = await run_in_threadpool(
+            self.reranker.rerank, question, rerank_candidates
+        )
         top_chunks = top_chunks[:settings.RERANK_TOP_N]
         sources = [
             {
@@ -337,7 +359,7 @@ class ChatService:
                 "chapter": c.get("chapter", ""),
                 "page": c.get("page", 1),
                 "snippet": c.get("content", "")[:200],
-                "score": round(c.get("score", 0), 4),
+                "score": round(float(c.get("score", 0) or 0), 4),
                 "source_url": c.get("source_url", ""),
                 "authority_weight": c.get("authority_weight", 1.0),
                 "authority_label": c.get("authority_label", ""),
@@ -368,7 +390,11 @@ class ChatService:
 
         # 写入单轮问答缓存（供后续相同问题直接命中）
         if cache_key:
-            self._store_cached_answer(question, security_level, full_answer, sources, scope_sig)
+            # 写内存 + 落盘，放到线程池避免拖住事件循环
+            await run_in_threadpool(
+                self._store_cached_answer, question, security_level,
+                full_answer, sources, scope_sig,
+            )
 
         # === 发送来源 ===
         yield {"type": "sources", "data": sources}
@@ -414,11 +440,14 @@ class ChatService:
         返回:
             按融合分数降序的片段列表
         """
+        # 带分类/文档范围时先扩大召回再过滤，避免范围外的前 K 条把范围内结果挤掉
+        fetch_k = max(top_k, 20) if (category_ids or document_ids) else top_k
         chunks = self.hybrid.search(
-            query=query, top_k=top_k, security_level=security_level,
+            query=query, top_k=fetch_k, security_level=security_level,
         )
         visible = self._visible_doc_ids(security_level, category_ids, document_ids)
-        return [c for c in chunks if c.get("document_id") in visible]
+        filtered = [c for c in chunks if c.get("document_id") in visible]
+        return filtered[:top_k]
 
     # ==================== 辅助方法 ====================
 
@@ -515,29 +544,30 @@ class ChatService:
             return candidates, ([error] if error else [])
 
         query_rewriter = get_query_rewriter()
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            rewrite_future = executor.submit(
-                query_rewriter.rewrite, question, chat_history
+        # 复用全局检索线程池：并发提问时不再每个请求各建一个池
+        executor = _RETRIEVAL_POOL
+        rewrite_future = executor.submit(
+            query_rewriter.rewrite, question, chat_history
+        )
+        raw_future = executor.submit(
+            self._search_once, question, security_level, settings.FUSION_TOP_K
+        )
+
+        rewrite_result = rewrite_future.result()
+        search_query = rewrite_result["rewritten"]
+
+        queries: List[str] = []
+        for v in [search_query] + list(rewrite_result.get("variants", []))[:2]:
+            if v and v != question and v not in queries:
+                queries.append(v)
+
+        raw_candidates, raw_error = raw_future.result()
+        if queries:
+            variant_candidates, variant_errors = self._multi_query_search(
+                queries, security_level, settings.FUSION_TOP_K
             )
-            raw_future = executor.submit(
-                self._search_once, question, security_level, settings.FUSION_TOP_K
-            )
-
-            rewrite_result = rewrite_future.result()
-            search_query = rewrite_result["rewritten"]
-
-            queries: List[str] = []
-            for v in [search_query] + list(rewrite_result.get("variants", []))[:2]:
-                if v and v != question and v not in queries:
-                    queries.append(v)
-
-            raw_candidates, raw_error = raw_future.result()
-            if queries:
-                variant_candidates, variant_errors = self._multi_query_search(
-                    queries, security_level, settings.FUSION_TOP_K
-                )
-            else:
-                variant_candidates, variant_errors = [], []
+        else:
+            variant_candidates, variant_errors = [], []
 
         candidates = self._merge_candidate_batches(
             [raw_candidates, variant_candidates]

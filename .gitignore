@@ -80,3 +80,12 @@ vite_out.txt
 # 真实学生名单（含学号/姓名，属个人数据，禁止入库）
 /deploy/students.json
 /deploy/students_bundle.b64
+
+# 个人资料与非交付文件（防止误提交泄漏）
+*.docx
+*.pdf
+/counselor/
+/design/
+/.tmp_diag/
+/package.json
+/package-lock.json

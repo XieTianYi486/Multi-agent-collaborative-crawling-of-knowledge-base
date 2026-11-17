@@ -34,6 +34,7 @@ export const COLLECTION_STATUS: Record<number, string> = {
   1: '已触发采集',
   2: '已完成',
   3: '已忽略',
+  4: '未匹配资料',
 }
 
 export const REASON_LABELS: Record<string, string> = {

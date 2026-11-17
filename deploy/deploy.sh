@@ -17,7 +17,8 @@ fi
 
 echo "==> 1/7 安装系统依赖"
 apt-get update -y
-apt-get install -y python3.10-venv nginx
+# libgl1/libglib2.0-0：OCR（RapidOCR/opencv）运行依赖；libgomp1：FAISS 运行依赖；curl：健康检查
+apt-get install -y python3.10-venv nginx curl libgl1 libglib2.0-0 libgomp1
 timedatectl set-timezone Asia/Shanghai || true
 
 echo "==> 2/7 解压项目"
@@ -36,28 +37,84 @@ mkdir -p "$APP_DIR/backend/logs"
 chown -R kb:kb "$APP_DIR"
 chmod -R a+rX "$APP_DIR/frontend/dist" 2>/dev/null || true
 
-echo "==> 4/7 调整 .env（关闭 DEBUG、重新生成密钥）"
+echo "==> 4/7 调整 .env（关闭 DEBUG、重新生成密钥与管理员密码、开启验证码、固定 FAISS 向量后端）"
 cd "$APP_DIR/backend"
-sed -i 's/^DEBUG=.*/DEBUG=false/' .env
-python3 - <<'PY'
+if [[ ! -f .env ]]; then
+  cp .env.example .env
+fi
+# 一次性生成全部安全生产配置；最后只输出新管理员密码供捕获
+NEW_ADMIN_PW=$(python3 - <<'PY'
 from pathlib import Path
 import secrets
 
 path = Path('.env')
-text = path.read_text(encoding='utf-8')
-lines = []
-for line in text.splitlines():
-    if line.startswith('SECRET_KEY='):
-        line = 'SECRET_KEY=' + secrets.token_urlsafe(48)
-    elif line.startswith('JWT_SECRET_KEY='):
-        line = 'JWT_SECRET_KEY=' + secrets.token_urlsafe(48)
-    lines.append(line)
-path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+lines = path.read_text(encoding='utf-8').splitlines()
+
+new_admin_pw = secrets.token_urlsafe(12)
+pending = {
+    "DEBUG": "false",
+    "SECRET_KEY": secrets.token_urlsafe(48),
+    "JWT_SECRET_KEY": secrets.token_urlsafe(48),
+    "ADMIN_PASSWORD": new_admin_pw,
+    "CAPTCHA_ENABLED": "true",
+    # 生产安全自检不得豁免
+    "SKIP_SAFETY_CHECK": "false",
+    # 交付的向量索引是 FAISS 格式；Ubuntu 22.04 的 SQLite 版本下 auto 会改选 ChromaDB，
+    # 导致稠密检索落到空集合，必须显式固定为 FAISS
+    "VECTOR_BACKEND": "faiss",
+}
+seen = set()
+out = []
+for line in lines:
+    stripped = line.strip()
+    key = line.split("=", 1)[0].strip() if ("=" in line and not stripped.startswith("#")) else None
+    if key in pending:
+        out.append(f"{key}={pending[key]}")
+        seen.add(key)
+        continue
+    out.append(line)
+for key, value in pending.items():
+    if key not in seen:
+        out.append(f"{key}={value}")
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+print(new_admin_pw)
 PY
+)
+if [[ -z "$NEW_ADMIN_PW" ]]; then
+  echo "[ERROR] 生成管理员密码失败"
+  exit 1
+fi
 chown kb:kb .env
+chmod 600 .env
 
 echo "==> 5/7 安装 Python 依赖（首次约 3-8 分钟）"
 sudo -u kb bash -c 'cd /opt/kb/backend && python3 -m venv .venv && .venv/bin/pip install -U pip && .venv/bin/pip install -r requirements.txt'
+
+echo "==> 5.5/7 轮换数据库中的默认弱口令管理员（幂等）"
+# 随包分发的数据库里 admin 的哈希可能是 admin123：改 .env 不影响库内已存在的用户，
+# 必须把库内仍为已知弱口令的管理员密码轮换为新生成的强密码
+sudo -u kb "$APP_DIR/backend/.venv/bin/python" - <<'PY'
+from app.core.config import settings
+from app.core.security import hash_password, verify_password
+from app.db.sqlite import SessionLocal
+from app.models.user import User
+
+WEAK_PASSWORDS = ("admin123", "change-this-password", "123456", "admin", "password")
+
+db = SessionLocal()
+try:
+    admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
+    if admin is None:
+        print("[deploy] 管理员账号不存在，首次启动时会自动创建")
+    elif any(verify_password(pw, admin.password_hash) for pw in WEAK_PASSWORDS):
+        admin.password_hash = hash_password(settings.ADMIN_PASSWORD)
+        db.commit()
+        print("[deploy] 已把弱口令管理员轮换为 .env 中配置的新密码")
+    else:
+        print("[deploy] 管理员密码非默认弱口令，保持不变")
+finally:
+    db.close()
+PY
 
 echo "==> 6/7 配置 systemd 服务"
 cat >/etc/systemd/system/kb.service <<'EOF'
@@ -137,10 +194,23 @@ systemctl daemon-reload
 systemctl enable --now kb
 systemctl reload nginx
 
-echo "==> 等待后端启动"
-sleep 3
-systemctl --no-pager -l status kb | head -n 12 || true
+echo "==> 等待后端启动并做健康检查"
+HEALTHY=0
+for _i in $(seq 1 15); do
+  sleep 2
+  if curl -sf --max-time 5 http://127.0.0.1:8001/api/health >/dev/null; then
+    HEALTHY=1
+    break
+  fi
+done
+if [[ "$HEALTHY" -ne 1 ]]; then
+  echo "[ERROR] 后端健康检查失败！请查看日志：journalctl -u kb -n 80 --no-pager"
+  systemctl --no-pager -l status kb | head -n 12 || true
+  exit 1
+fi
+
 IP=$(curl -s --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')
 echo ""
 echo "部署完成，访问：http://${IP}/"
-echo "提示：首次登录后请立即修改 admin 默认密码。"
+echo "管理员账号：admin"
+echo "管理员初始密码：${NEW_ADMIN_PW}（请登录后立即修改，并妥善保存）"

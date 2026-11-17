@@ -71,7 +71,22 @@ def main() -> int:
     logging.getLogger("crawler").info("===== 每日爬取流水线开始 =====")
 
     # 先触发知识库主库建表/迁移（source_url/source_hash 列），
-    # 否则首轮入库会因缺列失败
+    # 否则首轮入库会因缺列失败。
+    # 关键：init_db 的 create_all 只会创建「已导入的模型」表，
+    # 必须先注册全部 app 模型（与 app.main / tests/conftest 保持一致），
+    # 否则全新库上 create_all 空转、迁移直接报 no such table。
+    import app.models.user  # noqa: F401
+    import app.models.document  # noqa: F401
+    import app.models.chat  # noqa: F401
+    import app.models.ticket  # noqa: F401
+    import app.models.audit  # noqa: F401
+    import app.models.api_client  # noqa: F401
+    import app.models.counselor  # noqa: F401
+    import app.models.collection  # noqa: F401
+    import app.models.video  # noqa: F401
+    import app.models.teaching  # noqa: F401
+    import app.models.notification  # noqa: F401
+    import app.models.announcement  # noqa: F401
     from app.db.sqlite import init_db as kb_init_db
 
     kb_init_db()

@@ -67,9 +67,17 @@ class ChatLLM:
         )
         print(f"[LLM] provider={self.provider}, model={self.model}, base_url={base_url}")
 
+    @staticmethod
+    def _usage_dict(response) -> Dict:
+        return {
+            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+            "total_tokens": response.usage.total_tokens if response.usage else 0,
+        }
+
     def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict],
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> Dict:
@@ -97,19 +105,63 @@ class ChatLLM:
             choice = response.choices[0]
             return {
                 "content": choice.message.content or "",
-                "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-                    "total_tokens": response.usage.total_tokens if response.usage else 0,
-                },
+                "usage": self._usage_dict(response),
             }
 
         except Exception as e:
             raise LLMException(f"LLM 调用失败: {str(e)}")
 
+    def chat_with_tools(
+        self,
+        messages: List[Dict],
+        tools: List[Dict],
+        tool_choice: str = "auto",
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> Dict:
+        """
+        支持 function calling 的同步对话。
+
+        仅用于 AI 助手的工具规划阶段：模型要么返回一段文本，
+        要么返回一个或多个 tool_calls，由上层手写循环执行后回填结果。
+
+        返回:
+            {"content": str, "tool_calls": [{"id", "type", "function": {"name", "arguments"}}], "usage": dict}
+        """
+        try:
+            response = self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                temperature=temperature if temperature is not None else self.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
+                stream=False,
+                extra_body=self.extra_body,
+            )
+            message = response.choices[0].message
+            tool_calls = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments or "{}",
+                    },
+                }
+                for tc in (message.tool_calls or [])
+            ]
+            return {
+                "content": message.content or "",
+                "tool_calls": tool_calls,
+                "usage": self._usage_dict(response),
+            }
+        except Exception as e:
+            raise LLMException(f"LLM 工具调用失败: {str(e)}")
+
     async def chat_stream(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict],
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         usage_out: Optional[Dict] = None,

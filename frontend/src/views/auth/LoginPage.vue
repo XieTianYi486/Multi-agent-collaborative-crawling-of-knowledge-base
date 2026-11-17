@@ -100,6 +100,13 @@
             </el-button>
           </router-link>
         </div>
+
+        <div class="help-entry">
+          <router-link to="/help" class="help-link">
+            <el-icon :size="14"><QuestionFilled /></el-icon>
+            <span>第一次使用？查看使用教程</span>
+          </router-link>
+        </div>
       </el-form>
     </div>
   </div>
@@ -107,7 +114,7 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { User, Lock, ArrowRight, Reading, Setting } from '@element-plus/icons-vue'
+import { User, Lock, ArrowRight, Reading, Setting, QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
@@ -538,6 +545,26 @@ async function handleLogin() {
 
 .register-link {
   text-decoration: none;
+}
+
+.help-entry {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+.help-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--auth-text-dim);
+  text-decoration: none;
+  transition: color 0.18s ease;
+}
+
+.help-link:hover {
+  color: #a5b4fc;
 }
 
 .goto-register-btn {

@@ -25,6 +25,16 @@ CN_STOP_BIGRAMS = {
 ASCII_RE = re.compile(r"[a-z0-9][a-z0-9\-_.+/]{2,}")
 CN_RE = re.compile(r"[\u4e00-\u9fff]+")
 
+# 框架/中间件/芯片等专有术语：问题里出现这些词时，资料必须同样命中才算覆盖。
+# 否则「Python后端开发…FastAPI…」会被《Python 教程》误判为已完成补采。
+SPECIFIC_TERMS = {
+    "fastapi", "spring", "django", "flask", "sqlalchemy", "pydantic",
+    "uvicorn", "nginx", "docker", "kubernetes", "redis", "mongodb",
+    "mysql", "postgres", "postgresql", "sqlite", "esp32", "esp8266",
+    "esp-idf", "freertos", "mqtt", "raspberry", "arduino", "pytorch",
+    "tensorflow", "langchain", "react", "vue", "nodejs", "typescript",
+}
+
 
 def _ascii_terms(text: str) -> set[str]:
     return {t for t in ASCII_RE.findall((text or "").lower()) if len(t) >= 3}
@@ -52,14 +62,25 @@ def is_relevant(question: str, doc: Document) -> bool:
         return False
 
     category = doc.category.name if getattr(doc, "category", None) else ""
+    tags = doc.tags or ""
+    if isinstance(tags, (list, tuple)):
+        tags = " ".join(str(t) for t in tags)
     haystack = " ".join([
         doc.title or "",
-        doc.tags or "",
+        tags,
         category or "",
         (doc.summary or "") if hasattr(doc, "summary") else "",
     ]).lower()
 
-    if any(term in haystack for term in _ascii_terms(question)):
+    terms = _ascii_terms(question)
+
+    # 问题里含专有术语（框架/中间件/芯片）时，资料必须命中其中之一才认作覆盖，
+    # 避免只靠 python / java 这类宽泛语言名误判。
+    required = terms & SPECIFIC_TERMS
+    if required:
+        return any(term in haystack for term in required)
+
+    if any(term in haystack for term in terms):
         return True
 
     q_bigrams = _cn_ngrams(question, 2)

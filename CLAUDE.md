@@ -241,16 +241,18 @@ python -m pytest -v
 ### 流水线拓扑
 ```
 crawl（必需：遍历站点→适配器→三层去重→落盘）
+  → discover（补采侦察，可选）→ targeted（定向抓取补采候选，可选）
   → tagger（LLM 可选：分类打标，映射 KB 分类树）
   → review（LLM 可选：拦截广告/垃圾/版权高风险）
   → summarize（LLM 可选：一句话摘要，仅存爬虫库）
-  → kb_sync（必需：复用 seed 范式入库 KB 主库 → 自动过审发布）
+  → kb_sync（必需：复用 seed 范式入库 KB 主库 → 置待审核）
+  → resolve（补采需求自动闭环，可选）
 ```
 
 - **智能体协作**：轻量 DAG 编排器（`crawler/agents/orchestrator.py`），deps/指数退避重试/optional；LLM 步骤超每日预算（默认 ¥2.0）或 API 不可用时自动 skipped，规则管线照常运行
 - **幂等**：URL 哈希 → 内容哈希 → SimHash 三层去重 + KB 侧 `source_hash` 闸门 + `kb_syncs` 唯一索引，重复运行零副作用
 - **版权合规**：risk_level 分级（low 全文 / medium 节选500字+原文链接 / high 不入库），`source_authorizations` 留痕；论坛内容只存节选
-- **入库**：`crawler/sync/ingest.py` 采用已验证的入库范式（建 Document 行 → `_process_document_task` → `review_status=2 + status=1` 自动过审）；爬取文档全部 `security_level=1`，并写入 `source_url/source_hash` 溯源字段（回答中展示原文链接）
+- **入库**：`crawler/sync/ingest.py` 采用已验证的入库范式（建 Document 行 → `_process_document_task` → `review_status=1 + status=1` 待管理员审核）；管理员在「知识审核」页人工确认后发布。爬取文档全部 `security_level=1`，并写入 `source_url/source_hash` 溯源字段（回答中展示原文链接）
 - **OCR**：`app/rag/ocr.py`（RapidOCR）在 `parse_pdf` 中对无文本层页面自动识别（逐页混合策略，`OCR_ENABLED/OCR_MAX_PAGES` 配置控制）
 
 ### 站点配置（crawler/config/sites.yaml）

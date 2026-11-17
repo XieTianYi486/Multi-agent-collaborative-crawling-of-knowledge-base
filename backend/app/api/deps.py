@@ -21,15 +21,17 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
 ) -> User:
     """
     从 JWT Token 获取当前登录用户
     所有受保护接口的基础依赖
 
-    使用独立的短生命周期 Session 加载用户，加载完成后立即 expunge，
-    返回一个 detached 但数据已完全加载的 User 对象。
+    直接复用当前请求的 Session 加载用户（FastAPI 会缓存 get_db，与端点共用同一个
+    Session），加载完成后立即 expunge，返回一个 detached 但数据已完全加载的 User 对象。
     这样即使用户请求的主 Session 发生 rollback（会无条件 expire 所有对象），
-    也不会影响 current_user，彻底避免 "not bound to a Session" 错误。
+    也不会影响 current_user，彻底避免 "not bound to a Session" 错误；
+    同时省掉每个请求额外开启一条数据库连接的开销。
 
     返回:
         当前登录的 User 对象（detached，role 已预加载）
@@ -59,43 +61,33 @@ def get_current_user(
             detail="Token 格式无效",
         )
 
-    # --- 使用独立 Session 加载用户 ---
-    # 这个 Session 仅用于加载 User 及其 role，加载完成后立即关闭，
-    # User 对象通过 expunge 脱离 Session，不受后续主 Session 的任何影响
-    user_db = SessionLocal()
-    try:
-        user = (
-            user_db.query(User)
-            .options(joinedload(User.role))
-            .filter(User.id == int(user_id))
-            .first()
+    # --- 复用请求内 Session 加载用户（省掉每请求一条额外连接） ---
+    user = (
+        db.query(User)
+        .options(joinedload(User.role))
+        .filter(User.id == int(user_id))
+        .first()
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在",
         )
 
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="用户不存在",
-            )
+    if user.status == 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账号已被禁用，请联系管理员",
+        )
 
-        if user.status == 0:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="账号已被禁用，请联系管理员",
-            )
+    # 强制访问 role 属性，确保 joinedload 的数据已加载到内存
+    _ = user.role
 
-        # 强制访问 role 属性，确保 joinedload 的数据已加载到内存
-        # （正常情况下 joinedload 已保证，此处是额外的安全保障）
-        _ = user.role
-
-        # 将 User 从当前 Session 中 expunge（脱离），
-        # 使其成为 detached 对象。所有已加载的属性保持在内存中，
-        # 访问时不会触发数据库查询
-        user_db.expunge(user)
-
-        return user
-
-    finally:
-        user_db.close()
+    # 脱离 Session：后续 Session 的 rollback / close 都不会让该对象失效，
+    # 所有已加载属性保持在内存中，访问时不再触发数据库查询
+    db.expunge(user)
+    return user
 
 
 def get_current_active_user(

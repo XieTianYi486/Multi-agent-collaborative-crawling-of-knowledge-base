@@ -40,6 +40,12 @@ async def lifespan(app: FastAPI):
     # 启动时
     print(f"[启动] {settings.APP_NAME} v{settings.APP_VERSION}")
 
+    # 同步端点（SQLAlchemy 同步 Session）跑在 anyio 线程池里，默认只有 40 个令牌。
+    # 并发超过这个数时，连接释放和依赖清理拿不到线程，会互相等待，
+    # 表现为请求卡住 10 秒后 500。放宽到 80，避免高并发下的线程池饥饿。
+    from anyio import to_thread
+    to_thread.current_default_thread_limiter().total_tokens = 80
+
     # 安全自检：非 DEBUG 环境检测到默认密钥/密码/关闭验证码时直接拒绝启动（先于任何数据初始化）
     _assert_production_safety()
 
@@ -174,32 +180,36 @@ def health_check():
 
 def _assert_production_safety():
     """
-    生产环境安全自检。
+    生产环境安全自检（默认关闭失败）。
 
-    开发环境（DEBUG=true）只打印告警，便于本地调试；
-    非 DEBUG 环境检测到不安全生产配置时直接抛出异常，阻止带病上线。
+    只要检测到占位 JWT 密钥 / 弱管理员口令 / 关闭验证码，一律拒绝启动——
+    与 DEBUG 无关，避免"忘了把 DEBUG 改成 false"就让安全防线整体静默失效。
+    本地开发如需保留弱口令调试，必须在 .env 显式设置 SKIP_SAFETY_CHECK=true
+    （deploy.sh 会强制把该开关写回 false）。
     """
     default_jwt_keys = {"jwt-secret-change-in-production", "jwt-dev-secret-2024"}
+    # .env.example 的占位符同样属于公开弱口令，一并拦截
+    weak_admin_passwords = {"admin123", "change-this-password", "123456", "admin", "password"}
     problems = []
     if settings.JWT_SECRET_KEY in default_jwt_keys:
         problems.append("JWT_SECRET_KEY 仍为默认值（任何人可伪造登录 Token）")
-    if settings.ADMIN_PASSWORD == "admin123":
-        problems.append("ADMIN_PASSWORD 仍为默认密码 admin123")
+    if settings.ADMIN_PASSWORD in weak_admin_passwords:
+        problems.append("ADMIN_PASSWORD 仍为默认/占位弱口令（admin123 / change-this-password 等）")
     if not settings.CAPTCHA_ENABLED:
         problems.append("CAPTCHA_ENABLED=false（登录验证码被关闭）")
 
     if not problems:
         return
 
-    if settings.DEBUG:
+    if settings.SKIP_SAFETY_CHECK:
         for p in problems:
-            print(f"[安全警告] {p}，仅限本地开发使用，请勿用于生产部署！")
+            print(f"[安全警告] {p}，SKIP_SAFETY_CHECK=true 已豁免，仅限本地开发！")
         return
 
     raise RuntimeError(
         "检测到不安全生产配置，已拒绝启动：\n  - "
         + "\n  - ".join(problems)
-        + "\n请在 backend/.env 中修改后重启（本地开发可设置 DEBUG=true 跳过此检查）。"
+        + "\n请在 backend/.env 中修改后重启（仅本地开发调试可设置 SKIP_SAFETY_CHECK=true 豁免）。"
     )
 
 

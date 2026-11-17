@@ -20,7 +20,7 @@ class CollectionRequest(Base):
     question = Column(Text, nullable=False, comment="待补采的问题")
     # 来源：missed=未命中(拒答) negative_feedback=点踩
     reason = Column(String(20), default="missed", nullable=False, comment="需求来源")
-    # 状态流转：0=待处理 1=已触发采集 2=已完成 3=已忽略
+    # 状态流转：0=待处理 1=已触发采集 2=已完成 3=已忽略 4=未匹配资料（本轮没抓到可入库内容）
     status = Column(Integer, default=0, nullable=False, index=True, comment="处理状态")
     category_id = Column(Integer, nullable=True, comment="建议归属分类ID（可选）")
     chat_log_id = Column(Integer, nullable=True, comment="关联问答日志ID（可选）")

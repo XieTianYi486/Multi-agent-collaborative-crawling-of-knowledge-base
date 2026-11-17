@@ -4,19 +4,23 @@
 LLM 步骤均为 optional：API 不可用或超预算时自动跳过，规则管线照常运行。
 
 流水线拓扑：
-  crawl（必需）→ tagger（LLM,可选）→ review（LLM,可选）→ summarize（LLM,可选）
-              └→ kb_sync（必需，读前序智能体产物，单文档容错）
+  crawl（必需）→ discover（补采侦察，可选）→ targeted（定向抓取，可选）
+              → tagger / review / summarize（LLM,可选）
+              → kb_sync（必需，读前序智能体产物，单文档容错）
+              → resolve（补采需求自动闭环，可选）
 """
 from __future__ import annotations
 
 import logging
 
-from .agents import reviewer, summarizer, tagger
+from .agents import reviewer, scout, summarizer, tagger
 from .agents.orchestrator import Orchestrator, Step
 from .crawl.crawl import run_crawl
+from .crawl.targeted import run_targeted
 from .settings import get_settings
 from .store import repo
 from .store.db import init_db, session_scope
+from .sync.resolve import resolve_requests
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +28,11 @@ log = logging.getLogger(__name__)
 def run_daily(ctx: dict | None = None, on_step: object = None) -> dict:
     """一键跑完整每日流水线。
 
-    ctx 可传 {"site_codes": [...]}（调试只采指定站点）；
+    ctx 可传：
+    - {"site_codes": [...]}   调试只采指定站点；
+    - {"request_ids": [...]}  只处理指定补采需求（管理端单条触发）；
+    - {"skip_crawl": True}    定向补采模式，跳过全站遍历；
+    - {"target_limit": 8}     单次定向抓取的 URL 上限。
     on_step(step_name, StepResult) 每步完成时回调（UI 实时状态用）。
     """
     ctx = {} if ctx is None else ctx
@@ -34,12 +42,16 @@ def run_daily(ctx: dict | None = None, on_step: object = None) -> dict:
 
     steps = [
         Step("crawl", _step_crawl),
-        Step("tagger", _step_tagger, deps=("crawl",), optional=True),
-        Step("review", _step_review, deps=("crawl",), optional=True),
-        Step("summarize", _step_summarize, deps=("crawl",), optional=True),
+        # 补采侦察：把 status=1 的补采需求转成候选 URL（LLM 可选，失败不影响主链路）
+        Step("discover", _step_discover, optional=True),
+        Step("targeted", _step_targeted, deps=("discover",), optional=True),
+        Step("tagger", _step_tagger, deps=("crawl", "targeted"), optional=True),
+        Step("review", _step_review, deps=("crawl", "targeted"), optional=True),
+        Step("summarize", _step_summarize, deps=("crawl", "targeted"), optional=True),
         # kb_sync 依赖全部智能体步骤：skipped（预算/LLM不可用）也视为已完成，
         # 此时入库同步器用规则默认值兜底
         Step("kb_sync", _step_kb_sync, deps=("tagger", "review", "summarize")),
+        Step("resolve", _step_resolve, deps=("kb_sync",), optional=True),
     ]
     return Orchestrator(steps).run(ctx, on_step_done=on_step)
 
@@ -48,6 +60,9 @@ def run_daily(ctx: dict | None = None, on_step: object = None) -> dict:
 
 
 def _step_crawl(ctx: dict) -> None:
+    if ctx.get("skip_crawl"):
+        log.info("定向补采模式：跳过站点遍历，只抓补采队列")
+        return
     stats = run_crawl(ctx.get("site_codes"))
     ctx["crawl_stats"] = stats
     log.info("采集完成：新增 %d，去重 %d，失败条目 %d",
@@ -97,3 +112,49 @@ def _step_kb_sync(ctx: dict) -> None:
     ctx["kb_sync"] = stats
     log.info("知识库同步完成：成功 %d，跳过 %d，失败 %d",
              stats.synced, stats.skipped, stats.failed)
+
+
+def _step_discover(ctx: dict) -> None:
+    """把已触发但知识库未覆盖的补采问题，转成待抓取的候选 URL。"""
+    from app.db.sqlite import SessionLocal
+    from app.models.collection import CollectionRequest
+
+    request_ids = ctx.get("request_ids")
+    db = SessionLocal()
+    try:
+        query = db.query(CollectionRequest).filter(CollectionRequest.status == 1)
+        if request_ids:
+            query = query.filter(CollectionRequest.id.in_(request_ids))
+        targets = [(r.id, r.question) for r in query.order_by(CollectionRequest.id).limit(3).all()]
+    finally:
+        db.close()
+
+    if not targets:
+        return
+
+    queued = 0
+    attempted: list[int] = []
+    for request_id, question in targets:
+        try:
+            with session_scope() as session:
+                queued += scout.discover(session, request_id, question)
+            attempted.append(request_id)
+        except Exception as exc:  # noqa: BLE001 - 单条需求失败不影响其他需求
+            log.warning("补采需求 #%d 侦察失败: %s", request_id, exc)
+    ctx["discovered"] = queued
+    # 只有真正跑过侦察的需求才允许被判定为“未匹配资料”，异常的需求留给下一轮重试
+    ctx["scout_requests"] = attempted
+    log.info("补采侦察完成：%d 个候选 URL 入队", queued)
+
+
+def _step_targeted(ctx: dict) -> None:
+    stats = run_targeted(limit=int(ctx.get("target_limit", 8)))
+    ctx["targeted"] = stats
+
+
+def _step_resolve(ctx: dict) -> None:
+    resolved, unmatched = resolve_requests(ctx.get("scout_requests"))
+    ctx["resolved"] = resolved
+    ctx["unmatched"] = unmatched
+    if unmatched:
+        log.info("补采未匹配：%d 条需求已标记为「未匹配资料」", unmatched)

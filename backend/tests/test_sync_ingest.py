@@ -100,17 +100,18 @@ class TestSyncDocuments:
         assert stats.synced == 1
         assert fake_process_task["ids"]  # 真实调用被 monkeypatch 捕获
 
-        # 3. KB 侧断言：已入库 + 自动过审 + 密级公开
+        # 3. KB 侧断言：已入库 + 待管理员审核（爬取内容不自动发布）+ 密级公开
         from app.models.document import Document as KbDocument
 
         kb_doc = db.query(KbDocument).filter(KbDocument.source_hash.isnot(None)).first()
         assert kb_doc is not None
         assert kb_doc.source_url == "https://example.com/doc/a1"
         assert kb_doc.status == 1
-        assert kb_doc.review_status == 2
+        assert kb_doc.review_status == 1
         assert kb_doc.security_level == 1
         assert kb_doc.category_id is not None
         assert "爬虫自动入库" in kb_doc.review_comment
+        assert "待管理员审核" in kb_doc.review_comment
 
         # 4. 幂等：第二轮不再处理（kb_syncs 唯一索引闸门 → 待同步列表为空）
         stats2 = sync_documents(limit=10)

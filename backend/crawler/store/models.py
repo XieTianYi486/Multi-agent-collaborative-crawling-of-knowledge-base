@@ -109,6 +109,27 @@ class Document(Base):
     site: Mapped["Site"] = relationship()
 
 
+class DiscoveryQueue(Base):
+    """发现式补采队列：补采问题 → 侦察 Agent 检索到的候选 URL（排队等待定向抓取）。"""
+
+    __tablename__ = "discovery_queue"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # 知识库侧 collection_requests.id（分库，不建外键）
+    request_id: Mapped[int] = mapped_column(Integer, index=True)
+    channel: Mapped[str] = mapped_column(String(32), default="")  # github/stackoverflow/electronics
+    url: Mapped[str] = mapped_column(String(1024), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(512), default="")
+    snippet: Mapped[str] = mapped_column(Text, default="")
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    # queued=待抓取 fetched=已抓取入库 failed=抓取失败 skipped=robots/内容跳过
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 爬虫侧 documents.id
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    fetched_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class KnowledgeBaseSync(Base):
     """采集文档 → 知识库主库 的同步留痕（幂等：每篇文档只推一次）。"""
 

@@ -10,7 +10,7 @@ from app.rag.llm.dashscope_llm import get_llm
 from app.core.config import settings
 
 
-QUERY_REWRITE_PROMPT = """你是人工智能学院教学知识库的查询优化助手。你的任务是将师生关于嵌入式开发（ESP32 / ESP-IDF / 树莓派 / 电子电路 / 物联网）学习的口语化问题改写为更适合检索教学资料与官方文档的查询语句。
+QUERY_REWRITE_PROMPT = """你是人工智能学院教学知识库的查询优化助手。你的任务是将师生关于嵌入式开发（ESP32 / ESP-IDF / 树莓派 / 电子电路 / 物联网）与软件工程（Java / Python / C/C++ / 数据结构与算法 / 数据库 / Web 与后端开发）学习的口语化问题改写为更适合检索教学资料与官方文档的查询语句。
 
 【改写规则】
 1. 将口语化表达规范为专业术语：例如"板子点不亮"→"ESP32 启动失败 调试"；"程序烧不进去"→"ESP32 固件烧录 flash 失败"；"这个传感器怎么接"→"传感器 接线 引脚 电路"。

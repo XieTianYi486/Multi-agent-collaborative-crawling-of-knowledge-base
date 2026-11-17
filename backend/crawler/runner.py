@@ -42,9 +42,13 @@ def _snapshot() -> dict:
         }
 
 
-def start_run(trigger: str = "manual") -> bool:
-    """启动流水线（后台 daemon 线程）。已在运行时返回 False（不重复启动）。"""
+def start_run(trigger: str = "manual", ctx: Optional[dict] = None) -> bool:
+    """启动流水线（后台 daemon 线程）。已在运行时返回 False（不重复启动）。
+
+    ctx 透传给 run_daily，可携带 {"request_ids": [...]}/{"target_limit": N} 等定向参数。
+    """
     global _run_state
+    run_ctx = dict(ctx or {})
     with _lock:
         if _run_state["running"]:
             log.warning("流水线已在运行中，忽略新的触发（%s）", trigger)
@@ -69,7 +73,7 @@ def start_run(trigger: str = "manual") -> bool:
 
     def _target() -> None:
         try:
-            results = run_daily(on_step=_on_step)
+            results = run_daily(ctx=run_ctx, on_step=_on_step)
             failed = [n for n, r in results.items() if not r.ok and not r.skipped]
             with _lock:
                 _run_state["error"] = "；".join(f"{n}: {r.error}" for n, r in results.items()

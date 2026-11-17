@@ -20,16 +20,22 @@ engine = create_engine(
     settings.DATABASE_URL,
     connect_args=connect_args,
     echo=settings.DEBUG,  # 开发环境打印 SQL
-    pool_pre_ping=True,   # 连接前检测可用性
+    # SQLite 是本地文件，不存在"连接失效"问题，pre_ping 只会给每次取连接
+    # 多加一条 SELECT 1；连接池放大到 40，避免高并发时排队 30 秒后报错
+    pool_size=20,
+    max_overflow=20,
+    pool_timeout=10,
 )
 
 # --- SQLite 特定优化 ---
 if "sqlite" in settings.DATABASE_URL:
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
-        """启用 SQLite WAL 模式、外键约束、UTF-8 编码"""
+        """设置连接级 PRAGMA（WAL 由 init_db 在启动时设置一次并持久化）"""
         cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL;")
+        # 注意：journal_mode 是持久化到数据库文件的属性，不能在每个新连接上执行。
+        # 高并发时大量新连接同时执行 PRAGMA journal_mode=WAL 会争抢排他锁，
+        # 叠加 busy_timeout=30 会把线程池全部拖死（表现为请求 30 秒后 500）。
         cursor.execute("PRAGMA foreign_keys=ON;")
         cursor.execute("PRAGMA encoding='UTF-8';")
         cursor.close()
@@ -88,6 +94,27 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     # 自动迁移：为已有表添加新列（SQLite ALTER TABLE 兼容）
     _migrate_add_columns(engine)
+    _ensure_indexes(engine)
+    _ensure_journal_mode(engine)
+
+
+def _ensure_journal_mode(engine):
+    """WAL 是数据库文件的持久属性，启动时设置一次即可。"""
+    with engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+        conn.commit()
+
+
+def _ensure_indexes(engine):
+    """补充性能索引（create_all 不会为已存在的表创建新索引）。"""
+    with engine.connect() as conn:
+        # 文档列表固定按「已发布 + 已通过」过滤并按创建时间倒序，
+        # 没有该索引时每次都要扫描全表再建临时排序树
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_documents_visible_created "
+            "ON documents (status, review_status, created_at)"
+        )
+        conn.commit()
 
 
 def _migrate_add_columns(engine):

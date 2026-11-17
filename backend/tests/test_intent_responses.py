@@ -16,7 +16,8 @@ class TestIntentResponses:
 
     def test_greeting_default(self):
         resp = get_greeting_response("在吗")
-        assert "嵌入式开发" in resp
+        # 知识域已扩展：嵌入式 + 软件工程双方向
+        assert "嵌入式" in resp and "软件工程" in resp
 
     def test_greeting_thanks(self):
         resp = get_greeting_response("谢谢")

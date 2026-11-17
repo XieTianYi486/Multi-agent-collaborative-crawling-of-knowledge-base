@@ -6,16 +6,22 @@
         v-if="!open"
         ref="fabEl"
         class="cp-fab"
-        title="AI 助手（可拖动）"
+        aria-label="AI 助手（可拖动）"
         :style="fabStyle"
         @pointerdown="onFabDown"
         @dragstart.prevent
         @click="onFabClick"
       >
         <span class="cp-fab-core">
-          <img class="cp-fab-img" :src="counselorAvatar" alt="AI 助手" draggable="false" />
+          <AssistantMascot :state="mascotState" />
         </span>
-        <span class="cp-fab-tip">AI 助手在线</span>
+        <span class="cp-fab-tip">
+          <span class="cp-fab-tip-title">
+            <i class="cp-fab-tip-dot"></i>
+            AI 助手
+          </span>
+          <span class="cp-fab-tip-sub">在线 · 点击开始提问</span>
+        </span>
       </button>
     </transition>
 
@@ -24,7 +30,7 @@
       <section v-if="open" ref="panelEl" class="cp-panel" :style="panelStyle">
         <header class="cp-head" title="按住此处可拖动窗口" @pointerdown="onHeadDown" @dragstart.prevent>
           <div class="cp-avatar">
-            <img class="cp-avatar-img" :src="counselorAvatar" alt="AI 助手" draggable="false" />
+            <AssistantMascot :state="mascotState" />
           </div>
           <div class="cp-title">
             <div class="cp-name">AI 助手</div>
@@ -87,7 +93,8 @@
         <!-- 历史会话 -->
         <transition name="cp-fade">
           <div v-if="showHistory" class="cp-history">
-            <div v-if="!sessions.length" class="cp-history-empty">还没有历史对话哦～</div>
+            <div v-if="histError" class="cp-history-empty">{{ histError }}</div>
+            <div v-else-if="!sessions.length" class="cp-history-empty">还没有历史对话哦～</div>
             <div
               v-for="s in sessions"
               :key="s.id"
@@ -106,16 +113,12 @@
         <!-- 消息区 -->
         <div ref="listEl" class="cp-body">
           <div v-if="!messages.length && !streaming" class="cp-welcome">
-            <div class="cp-welcome-bot">
-              <img class="cp-welcome-bot-img" :src="counselorAvatar" alt="AI 助手" draggable="false" />
-            </div>
-            <p class="cp-welcome-text">
-              你好呀，我是你的 AI 助手～<br />
-              嵌入式开发学习中的问题（ESP32 / ESP-IDF / 树莓派 / 电子电路），或是想查找教学资料，都可以问我。
-            </p>
+            <p class="cp-welcome-hello">你好，我是 AI 助手</p>
+            <p class="cp-welcome-desc">{{ welcomeDesc }}</p>
             <div class="cp-quick">
               <button v-for="q in quickPrompts" :key="q" class="cp-quick-btn" @click="askQuick(q)">
-                {{ q }}
+                <span class="cp-quick-text">{{ q }}</span>
+                <span class="cp-quick-arrow">→</span>
               </button>
             </div>
             <div class="cp-welcome-tools">
@@ -129,10 +132,47 @@
           <div v-for="m in messages" :key="m.id" class="cp-row" :class="m.role">
             <div class="cp-bubble">
               <span v-if="m.role === 'assistant' && m.mode" class="cp-mode-tag" :class="m.mode">
-                {{ m.mode === 'knowledge' ? '知识库依据' : '智能回答' }}
+                {{ m.mode === 'knowledge' ? '知识库依据' : (m.mode === 'action' ? '待确认操作' : '智能回答') }}
               </span>
               <!-- AI 助手回答是 Markdown（含表格/加粗/分点），需渲染后展示，否则原文符号会直接暴露给用户 -->
               <div class="cp-text" v-html="renderMarkdown(m.content)"></div>
+              <!-- 工具执行步骤：让用户看到助手实际查了什么、办了什么 -->
+              <div v-if="m.toolSteps && m.toolSteps.length" class="cp-steps">
+                <div
+                  v-for="(s, i) in m.toolSteps"
+                  :key="`${m.id}-${i}`"
+                  class="cp-step"
+                  :class="{ failed: s.ok === false }"
+                >
+                  <span class="cp-step-dot"></span>
+                  <span class="cp-step-label">{{ s.label }}</span>
+                  <span v-if="s.summary" class="cp-step-summary" :title="s.summary">{{ s.summary }}</span>
+                </div>
+              </div>
+              <!-- 写操作确认卡片：模型只能提议，必须用户点击确认才执行 -->
+              <div
+                v-if="m.action"
+                class="cp-action"
+                :class="{ done: m.action.done, failed: m.action.ok === false }"
+              >
+                <div class="cp-action-head">
+                  <span class="cp-action-badge">待</span>
+                  <span class="cp-action-title">{{ m.action.label }}</span>
+                </div>
+                <div v-if="actionPreview(m.action)" class="cp-action-body">{{ actionPreview(m.action) }}</div>
+                <div v-if="m.action.error" class="cp-action-error">{{ m.action.error }}</div>
+                <div v-if="m.action.done" class="cp-action-result">
+                  {{ m.action.resultText || (m.action.ok ? '操作已完成' : '操作未完成') }}
+                </div>
+                <button
+                  v-else
+                  class="cp-action-btn"
+                  :disabled="m.action.loading"
+                  @click="confirmAction(m)"
+                >
+                  {{ m.action.loading ? '提交中…' : '确认执行' }}
+                </button>
+              </div>
               <!-- 资料卡片：助手检索到的文档/视频，点击直接跳转到对应页面 -->
               <div v-if="m.resources && m.resources.length" class="cp-resources">
                 <div class="cp-resources-title">为你找到的资料（点击打开）</div>
@@ -183,10 +223,22 @@
 
           <div v-if="streaming" class="cp-row assistant">
             <div class="cp-bubble">
+              <div v-if="liveSteps.length" class="cp-steps">
+                <div
+                  v-for="(s, i) in liveSteps"
+                  :key="i"
+                  class="cp-step"
+                  :class="{ failed: s.ok === false }"
+                >
+                  <span class="cp-step-dot"></span>
+                  <span class="cp-step-label">{{ s.label }}</span>
+                  <span v-if="s.summary" class="cp-step-summary" :title="s.summary">{{ s.summary }}</span>
+                </div>
+              </div>
               <div v-if="streamContent && minLoadingDone" class="cp-text" v-html="renderMarkdown(streamContent)"></div>
               <div v-else class="cp-loading">
                 <div class="cp-typing"><i></i><i></i><i></i></div>
-                <span class="cp-loading-text">AI 助手正在思考中…</span>
+                <span class="cp-loading-text">{{ liveSteps.length ? '正在执行…' : 'AI 助手正在思考中…' }}</span>
               </div>
             </div>
           </div>
@@ -228,12 +280,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { Close, Plus, Clock, Delete, Promotion, Refresh, Microphone, CaretBottom } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { counselorApi, counselorStream } from '@/api/counselor'
-import type { CounselorSource, CounselorSession, CounselorResource } from '@/api/counselor'
+import AssistantMascot from './AssistantMascot.vue'
+import type {
+  CounselorSource, CounselorSession, CounselorResource,
+  CounselorToolStep, CounselorAction,
+} from '@/api/counselor'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/store/auth'
 
 // html: false —— 禁止原始 HTML 透传，避免模型输出带标签时触发 XSS
 const md = new MarkdownIt({ breaks: true, linkify: true, html: false })
@@ -260,9 +317,6 @@ function isHttpUrl(url?: string | null) {
   return !!url && /^https?:\/\//i.test(url.trim())
 }
 
-// AI 助手形象（静态资源，置于 public 目录，避免为图片导入引入额外类型声明）
-const counselorAvatar = '/ai-assistant.jpg?v=2'
-
 interface LocalMessage {
   id: number
   role: 'user' | 'assistant'
@@ -270,6 +324,8 @@ interface LocalMessage {
   mode?: string | null
   sources?: CounselorSource[] | null
   resources?: CounselorResource[] | null
+  toolSteps?: CounselorToolStep[] | null
+  action?: CounselorAction | null
 }
 
 const open = ref(false)
@@ -278,10 +334,12 @@ const messages = ref<LocalMessage[]>([])
 const streaming = ref(false)
 const loadingHistory = ref(false)   // 正在加载会话历史消息
 const streamContent = ref('')
+const liveSteps = ref<CounselorToolStep[]>([])   // 本次流式请求的工具执行步骤
 const minLoadingDone = ref(false)   // 加载状态最小显示时间已过
 const sessionId = ref<string | null>(null)
 const sessions = ref<CounselorSession[]>([])
 const showHistory = ref(false)
+const histError = ref('')
 const notice = ref('')
 const errorMsg = ref('')
 const listEl = ref<HTMLElement | null>(null)
@@ -296,11 +354,51 @@ function openResource(resource: CounselorResource) {
   router.push(resource.url)
 }
 
+/** 确认卡片里展示的关键参数（补采问题 / 工单标题） */
+function actionPreview(action: CounselorAction) {
+  const args = action?.args || {}
+  return args.question || args.title || args.query || ''
+}
+
+/** 用户点击确认后才真正执行写操作（两阶段中的第二阶段） */
+async function confirmAction(message: LocalMessage) {
+  const action = message.action
+  if (!action || action.loading || action.done) return
+
+  action.loading = true
+  action.error = ''
+  try {
+    const res = await counselorApi.confirmAction(action.action_token)
+    const ok = (res?.code ?? 0) === 0
+    action.done = true
+    action.ok = ok
+    action.resultText = res?.data?.summary || res?.message || (ok ? '操作已完成' : '操作未完成')
+    messages.value.push({
+      id: ++seq,
+      role: 'assistant',
+      content: action.resultText || '',
+      mode: 'general',
+    })
+  } catch (e: any) {
+    action.error = e?.message || '操作失败，请稍后重试'
+  } finally {
+    action.loading = false
+    scrollToBottom()
+  }
+}
+
 // ==================== 语音播报（Edge TTS - 分段合成降低延迟） ====================
 const voiceEnabled = ref(true)                               // 是否开启语音
 const speaking = ref(false)                                   // 是否正在播报（用于嘴型同步）
 const voiceMenuOpen = ref(false)                              // 音色选择菜单
 const selectedVoice = ref(localStorage.getItem('counselor_voice') || 'zh-CN-XiaoxiaoNeural') // 用户选中的 Edge TTS 音色
+
+// 助手形象状态：播报中 > 生成中 > 待机
+const mascotState = computed<'idle' | 'thinking' | 'speaking'>(() => {
+  if (speaking.value) return 'speaking'
+  if (streaming.value) return 'thinking'
+  return 'idle'
+})
 
 // 当前播放的音频元素和分段队列
 let currentAudio: HTMLAudioElement | null = null
@@ -394,7 +492,12 @@ async function playSegments(segments: string[]) {
       audioUrl = nextAudioUrl
       nextAudioUrl = null
     } else {
-      audioUrl = await fetchSegmentAudio(segments[i])
+      try {
+        audioUrl = await fetchSegmentAudio(segments[i])
+      } catch {
+        // 单段合成失败直接跳过，否则异常会跳出整个函数，speaking 永远停在 true
+        continue
+      }
     }
 
     // 后台预取下一段（不等待）
@@ -669,7 +772,9 @@ let controller: AbortController | null = null
 let seq = 0
 
 /** 预设问题池：每次随机抽 4 条展示，点"换一批"重新抽取，避免只看到固定几条 */
-const QUICK_POOL = [
+
+/** 学生 / 普通用户：偏知识查询与实验排障 */
+const STUDENT_QUICK_POOL = [
   'ESP32 如何配置 GPIO 中断？',
   'ESP-IDF 工程编译报错怎么排查？',
   'ESP32 烧录失败有哪些常见原因？',
@@ -682,26 +787,83 @@ const QUICK_POOL = [
   'APA102 灯带的 SPI 时序是怎样的？',
 ]
 
+/** 老师：偏班级学情、教学资料与备课 */
+const TEACHER_QUICK_POOL = [
+  '我教哪些班级？',
+  '帮我看看我班最近的提问热点',
+  '我班哪些问题知识库答不上来？',
+  '帮我生成本周班级学情周报',
+  '我班最近的学习情况怎么样？',
+  '知识库里有 ESP32 相关的课件吗？',
+  '帮我找一下 FreeRTOS 任务调度的资料',
+  '如何给学生讲解 MQTT 协议？',
+  '推荐一些物联网综合实训案例',
+  '我班学生最近提问积极吗？',
+]
+
+/** 管理员：偏审核、补采、运营数据与安全审计 */
+const ADMIN_QUICK_POOL = [
+  '今天有哪些待办需要处理？',
+  '有哪些文档待审核？积压多久了？',
+  '最近补采需求和工单积压了多少？',
+  '这周平台使用情况怎么样？',
+  '最近哪些问题知识库答不上来？',
+  '有多少师生账号，角色分布如何？',
+  '近期有没有异常操作或敏感词命中？',
+  '待审核文档主要集中在哪些分类？',
+  '帮我查一下本周平台使用情况与已解答率',
+  '近期登录情况和账号活跃度怎么样？',
+]
+
 const QUICK_COUNT = 4
 
-/** Fisher-Yates 洗牌后取前 N 条，保证每次分布均匀且不重复 */
-function pickPrompts(): string[] {
-  const pool = [...QUICK_POOL]
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+const authStore = useAuthStore()
+const isTeacher = computed(() => authStore.user?.role_name === '老师')
+const isAdminRole = computed(() => authStore.isAdmin())
+
+/** 按当前身份选择预设问题池 */
+const roleQuickPool = computed(() => {
+  if (isAdminRole.value) return ADMIN_QUICK_POOL
+  if (isTeacher.value) return TEACHER_QUICK_POOL
+  return STUDENT_QUICK_POOL
+})
+
+/** 欢迎语同样按身份区分，避免管理员/老师看到学生向的能力介绍 */
+const welcomeDesc = computed(() => {
+  if (isAdminRole.value) {
+    return '管理员视角：可帮你查待审核文档、补采与工单积压、平台使用与已解答率、账号分布和安全审计。'
   }
-  return pool.slice(0, QUICK_COUNT)
+  if (isTeacher.value) {
+    return '教师视角：可帮你查任教班级、班级学情与提问热点，或查找备课所需的教学资料。'
+  }
+  return '嵌入式开发学习中的问题（ESP32 / ESP-IDF / 树莓派 / 电子电路）、软件工程与编程问题（Java / Python / Web 后端 / 数据库），或是想查找教学资料，都可以问我。'
+})
+
+/** Fisher-Yates 洗牌后取前 N 条，保证每次分布均匀且不重复 */
+function pickPrompts(pool: string[]): string[] {
+  const list = [...pool]
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[list[i], list[j]] = [list[j], list[i]]
+  }
+  return list.slice(0, QUICK_COUNT)
 }
 
-const quickPrompts = ref<string[]>(pickPrompts())
+const quickPrompts = ref<string[]>(pickPrompts(roleQuickPool.value))
+
+// 身份信息可能晚于组件挂载才就绪，身份变化时同步换一批对应角色的预设问题
+watch(roleQuickPool, (pool) => {
+  quickPrompts.value = pickPrompts(pool)
+})
+
 const refreshing = ref(false)
 
 /** 换一批：重新抽取；若与原集合完全重合则再抽一次，避免点了没变化 */
 function refreshPrompts() {
+  const pool = roleQuickPool.value
   const before = quickPrompts.value.join('|')
-  let next = pickPrompts()
-  if (next.join('|') === before) next = pickPrompts()
+  let next = pickPrompts(pool)
+  if (next.join('|') === before) next = pickPrompts(pool)
   quickPrompts.value = next
 
   refreshing.value = true
@@ -756,14 +918,26 @@ function closePanel() {
 
 function toggleHistory() {
   showHistory.value = !showHistory.value
+  // 每次展开都重新拉取，避免面板打开时那次请求失败/被中断后一直停留在空列表
+  if (showHistory.value) loadSessions()
 }
 
 async function loadSessions() {
+  histError.value = ''
   try {
     const res = await counselorApi.listSessions()
-    sessions.value = res.data?.data || res.data || []
+    const payload = res?.data
+    // 兼容三种返回形态：数组 / { data: 数组 } / { items: 数组 }
+    const list = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : []
+    sessions.value = list
   } catch {
-    /* 忽略 */
+    histError.value = '历史对话加载失败'
   }
 }
 
@@ -774,13 +948,20 @@ async function loadSession(id: string) {
   loadingHistory.value = true
   try {
     const res = await counselorApi.getMessages(id)
-    const items = res.data?.data?.items || []
+    // get() 返回的已经是 { code, message, data }，消息列表在 data.items 里
+    const payload = res?.data
+    const items: any[] = Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload)
+        ? payload
+        : []
     messages.value = items.map((m: any) => ({
       id: ++seq,
       role: m.role,
       content: m.content,
       mode: m.mode,
       sources: m.sources || null,
+      resources: m.resources || null,
     }))
     scrollToBottom()
   } catch {
@@ -805,6 +986,7 @@ function newChat() {
   sessionId.value = null
   messages.value = []
   streamContent.value = ''
+  liveSteps.value = []
   notice.value = ''
   errorMsg.value = ''
   showHistory.value = false
@@ -836,12 +1018,15 @@ function send() {
 
   streaming.value = true
   streamContent.value = ''
+  liveSteps.value = []
   minLoadingDone.value = false
   // 加载状态至少显示 500ms，避免 AI 回复太快看不到
   setTimeout(() => { minLoadingDone.value = true }, 500)
   scrollToBottom()
 
   let pendingSources: CounselorSource[] = []
+  const pendingSteps: CounselorToolStep[] = []
+  let pendingAction: CounselorAction | null = null
 
   controller = counselorStream(question, sessionId.value, {
     onToken: (t) => {
@@ -850,6 +1035,22 @@ function send() {
     },
     onSources: (s) => {
       pendingSources = s || []
+    },
+    onToolCall: (step) => {
+      pendingSteps.push({ ...step })
+      liveSteps.value = [...pendingSteps]
+      scrollToBottom()
+    },
+    onToolResult: (step) => {
+      // 用结果回填同一条步骤，避免同一工具出现两行
+      const idx = pendingSteps.findIndex((s) => s.id && s.id === step.id)
+      if (idx >= 0) pendingSteps[idx] = { ...pendingSteps[idx], ...step }
+      else pendingSteps.push({ ...step })
+      liveSteps.value = [...pendingSteps]
+      scrollToBottom()
+    },
+    onConfirmation: (action) => {
+      pendingAction = { ...action }
     },
     onSensitive: (masked) => {
       streamContent.value = masked
@@ -865,8 +1066,11 @@ function send() {
         mode: result.mode,
         sources: result.sources?.length ? result.sources : pendingSources,
         resources: result.resources?.length ? result.resources : null,
+        toolSteps: pendingSteps.length ? [...pendingSteps] : null,
+        action: pendingAction,
       })
       streamContent.value = ''
+      liveSteps.value = []
       streaming.value = false
       loadSessions()
       scrollToBottom()
@@ -876,6 +1080,7 @@ function send() {
     onError: (err) => {
       streaming.value = false
       streamContent.value = ''
+      liveSteps.value = []
       errorMsg.value = `AI 助手暂时没能回应：${err}`
       scrollToBottom()
     },
@@ -924,54 +1129,85 @@ defineExpose({ openPanel })
   height: 58px;
   box-sizing: border-box;
   padding: 0;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  background: var(--color-bg-card, #fff);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  overflow: visible;
+  background: transparent;
+  border: none;
+  /* 只让机器人本体浮起来：用跟随轮廓的投影代替白色圆底 */
+  filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.26));
+  transition: transform 0.22s ease, filter 0.22s ease;
 }
 
-/* AI 助手头像：保留原图白底，避免抠图边缘发脏 */
-.cp-fab-img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  border-radius: 50%;
-  object-fit: cover;
-  /* 关键：禁用图片默认的原生拖拽，否则按住头像会触发 HTML5 dragstart，
-     拖动期间 pointermove 被浏览器吞掉，导致图标只在松手后才跳位 */
-  -webkit-user-drag: none;
-  user-select: none;
-  pointer-events: none;
-}
 .cp-fab:hover .cp-fab-core {
   transform: translateY(-2px) scale(1.04);
-  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.24);
+  filter: drop-shadow(0 10px 20px rgba(15, 23, 42, 0.32));
 }
 
-/* 悬停提示 */
+/* 悬停提示：与项目卡片同语言（浅色底 + 细边框 + 柔和投影 + 指向机器人的小箭头） */
 .cp-fab-tip {
   position: absolute;
-  right: 70px;
+  right: 72px;
   top: 50%;
-  transform: translateY(-50%) translateX(6px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 14px;
   white-space: nowrap;
-  padding: 7px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  color: #fff;
-  background: rgba(30, 30, 46, 0.9);
+  border-radius: 12px;
+  background: var(--color-bg-card, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
   opacity: 0;
   pointer-events: none;
-  transition: all 0.2s ease;
+  transform: translateY(-50%) translateX(4px);
+  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+/* 指向机器人的小箭头 */
+.cp-fab-tip::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--color-bg-card, #fff);
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-right: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  transform: translateY(-50%) rotate(45deg);
+}
+.cp-fab-tip-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text-primary, #0f172a);
+}
+.cp-fab-tip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+  animation: cp-tip-pulse 2s ease-in-out infinite;
+}
+.cp-fab-tip-sub {
+  padding-left: 12px;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--color-text-secondary, #64748b);
 }
 .cp-fab:hover .cp-fab-tip {
   opacity: 1;
   transform: translateY(-50%) translateX(0);
+}
+@keyframes cp-tip-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16); }
+  50% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.06); }
 }
 
 /* ================= 对话面板 ================= */
@@ -1012,30 +1248,15 @@ defineExpose({ openPanel })
 :global(body.cp-dragging .cp-fab),
 :global(body.cp-dragging .cp-panel) { transition: none !important; }
 .cp-avatar {
-  width: 46px;
-  height: 46px;
-  box-sizing: border-box;
-  border-radius: 50%;
+  /* 机器人本身就是一个完整图形，不再套白色圆形底与外框 */
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  padding: 0;
-  background: var(--color-bg-card, #fff);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  flex-shrink: 0;
 }
 
-.cp-avatar-img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  border-radius: 50%;
-  object-fit: cover;
-  /* 禁用原生图片拖拽，保证面板头部拖动手感 */
-  -webkit-user-drag: none;
-  user-select: none;
-}
 .cp-title { flex: 1; min-width: 0; }
 .cp-name { font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--color-text-primary, #0f172a); }
 .cp-sub { font-size: 11.5px; color: var(--color-text-secondary, #64748b); margin-top: 3px; }
@@ -1208,61 +1429,57 @@ defineExpose({ openPanel })
 /* 欢迎态 */
 .cp-welcome {
   margin: auto 0;
-  text-align: center;
-  padding: 6px 4px;
+  padding: 4px 2px;
+  text-align: left;
 }
-/* 欢迎态：与 ChatPage 首页的机器人展示保持一致 */
-.cp-welcome-bot {
-  width: 56px;
-  height: 56px;
-  margin: 0 auto;
-  border-radius: 50%;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  box-sizing: border-box;
-  background: var(--color-bg-card, #fff);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+.cp-welcome-hello {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary, #0f172a);
 }
-.cp-welcome-bot-img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  border-radius: 50%;
-  object-fit: cover;
-  -webkit-user-drag: none;
-  user-select: none;
-}
-.cp-welcome-text {
-  margin: 12px 0 16px;
-  font-size: 13px;
-  line-height: 1.8;
+.cp-welcome-desc {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.75;
   color: var(--color-text-secondary, #64748b);
 }
 .cp-quick {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  justify-content: center;
 }
 .cp-quick-btn {
-  border: 1px solid var(--color-border, rgba(79, 70, 229, 0.2));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   background: var(--color-bg-card, #fff);
   color: var(--color-text-body, #334155);
   font-size: 12.5px;
-  padding: 7px 12px;
-  border-radius: 999px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.18s ease;
 }
+.cp-quick-arrow {
+  flex-shrink: 0;
+  color: var(--color-text-placeholder, #94a3b8);
+  transition: transform 0.18s ease, color 0.18s ease;
+}
 .cp-quick-btn:hover {
   color: var(--color-primary, #4f46e5);
-  background: var(--color-primary-light, rgba(79, 70, 229, 0.1));
+  background: var(--color-primary-light, rgba(79, 70, 229, 0.08));
   border-color: var(--color-primary, #4f46e5);
   transform: translateY(-1px);
+}
+.cp-quick-btn:hover .cp-quick-arrow {
+  transform: translateX(3px);
+  color: var(--color-primary, #4f46e5);
 }
 /* 换一批：弱化的文字按钮，不与问题胶囊抢视觉焦点 */
 .cp-quick-refresh {
@@ -1294,7 +1511,7 @@ defineExpose({ openPanel })
 /* 首屏工具行：换一批 */
 .cp-welcome-tools {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   gap: 4px;
 }
@@ -1384,6 +1601,98 @@ defineExpose({ openPanel })
   white-space: nowrap;
 }
 .cp-resource-arrow { flex: 0 0 auto; color: var(--color-primary); font-size: 13px; }
+
+/* 工具执行步骤 */
+.cp-steps {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-bg-page);
+  border: 1px dashed var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cp-step {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.cp-step-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success, #10b981);
+  transform: translateY(-1px);
+}
+.cp-step.failed .cp-step-dot { background: var(--color-danger, #ef4444); }
+/* 标签固定单行：否则摘要较长时 flex 会把它压到最小内容宽度，
+   中文会逐字换行，出现"竖排文字"与相邻横排摘要注意力不统一的问题 */
+.cp-step-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+.cp-step-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 写操作确认卡片 */
+.cp-action {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
+}
+.cp-action.done { border-color: var(--color-border); background: var(--color-bg-page); }
+.cp-action.failed { border-color: rgba(239, 68, 68, 0.45); }
+.cp-action-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.cp-action-badge {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 11px;
+  color: #fff;
+  background: var(--color-warning, #f59e0b);
+}
+.cp-action.done .cp-action-badge { background: var(--color-success, #10b981); }
+.cp-action-title { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
+.cp-action-body {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--color-text-body);
+  word-break: break-word;
+}
+.cp-action-error { margin-top: 6px; font-size: 12px; color: var(--color-danger, #ef4444); }
+.cp-action-result { margin-top: 6px; font-size: 12.5px; color: var(--color-success, #10b981); }
+.cp-action.failed .cp-action-result { color: var(--color-danger, #ef4444); }
+.cp-action-btn {
+  margin-top: 9px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--color-primary, #4f46e5), var(--color-primary-hover, #4338ca));
+  transition: opacity 0.16s;
+}
+.cp-action-btn:hover { opacity: 0.9; }
+.cp-action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 /* Markdown 渲染后的排版（v-html 内容需 :deep 才能命中 scoped 样式） */
 .cp-text :deep(p) { margin: 0 0 8px; }
 .cp-text :deep(p:last-child) { margin-bottom: 0; }
@@ -1423,11 +1732,33 @@ defineExpose({ openPanel })
   background: var(--color-bg-hover, rgba(79, 70, 229, 0.06));
   font-weight: 600;
 }
+/* 代码块：浏览器默认给 pre 设了 white-space: pre，长行会直接撑出气泡、
+超出屏幕；改为块内横向滚动，保证文字不跑到面板外 */
+.cp-text :deep(pre) {
+  max-width: 100%;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  overflow-x: auto;
+  line-height: 1.6;
+  white-space: pre;
+}
+.cp-text :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  white-space: pre;
+}
 .cp-text :deep(code) {
   padding: 1px 4px;
   border-radius: 4px;
   background: var(--color-bg-hover, rgba(79, 70, 229, 0.08));
   font-size: 12px;
+  /* 行内代码里的长标识符/URL 允许断行，避免单行撑破气泡 */
+  overflow-wrap: anywhere;
 }
 .cp-text :deep(blockquote) {
   margin: 8px 0;
@@ -1457,6 +1788,10 @@ defineExpose({ openPanel })
 .cp-mode-tag.persona {
   color: var(--color-primary, #4f46e5);
   background: var(--color-primary-light, #e0e7ff);
+}
+.cp-mode-tag.action {
+  color: var(--color-warning, #f59e0b);
+  background: rgba(245, 158, 11, 0.12);
 }
 
 /* 来源 */
