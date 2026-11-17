@@ -91,9 +91,9 @@ echo "==> 5/7 安装 Python 依赖（首次约 3-8 分钟）"
 sudo -u kb bash -c 'cd /opt/kb/backend && python3 -m venv .venv && .venv/bin/pip install -U pip && .venv/bin/pip install -r requirements.txt'
 
 echo "==> 5.5/7 轮换数据库中的默认弱口令管理员（幂等）"
-# 随包分发的数据库里 admin 的哈希可能是 admin123：改 .env 不影响库内已存在的用户，
-# 必须把库内仍为已知弱口令的管理员密码轮换为新生成的强密码
-sudo -u kb "$APP_DIR/backend/.venv/bin/python" - <<'PY'
+# 随包分发的数据库里 admin 已是已知强口令，此时保持原密码不变；
+# 仅当库内仍为已知弱口令时才轮换为 .env 中生成的新密码。
+ADMIN_ROTATE_RESULT=$(sudo -u kb "$APP_DIR/backend/.venv/bin/python" - <<'PY' | tail -n 1
 from app.core.config import settings
 from app.core.security import hash_password, verify_password
 from app.db.sqlite import SessionLocal
@@ -105,16 +105,18 @@ db = SessionLocal()
 try:
     admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
     if admin is None:
-        print("[deploy] 管理员账号不存在，首次启动时会自动创建")
+        print("NONE")
     elif any(verify_password(pw, admin.password_hash) for pw in WEAK_PASSWORDS):
         admin.password_hash = hash_password(settings.ADMIN_PASSWORD)
         db.commit()
-        print("[deploy] 已把弱口令管理员轮换为 .env 中配置的新密码")
+        print("ROTATED")
     else:
-        print("[deploy] 管理员密码非默认弱口令，保持不变")
+        print("KEPT")
 finally:
     db.close()
 PY
+)
+echo "[deploy] 管理员密码状态：${ADMIN_ROTATE_RESULT}"
 
 echo "==> 6/7 配置 systemd 服务"
 cat >/etc/systemd/system/kb.service <<'EOF'
@@ -213,4 +215,10 @@ IP=$(curl -s --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')
 echo ""
 echo "部署完成，访问：http://${IP}/"
 echo "管理员账号：admin"
-echo "管理员初始密码：${NEW_ADMIN_PW}（请登录后立即修改，并妥善保存）"
+if [[ "$ADMIN_ROTATE_RESULT" == "ROTATED" ]]; then
+  echo "管理员初始密码：${NEW_ADMIN_PW}（本次已轮换，请登录后立即修改）"
+elif [[ "$ADMIN_ROTATE_RESULT" == "KEPT" ]]; then
+  echo "管理员密码：沿用随包数据库中的现有密码（见《00-交付必读.md》第 2 节），本次未修改"
+else
+  echo "管理员初始密码：${NEW_ADMIN_PW}（数据库为空，首次启动时自动创建）"
+fi

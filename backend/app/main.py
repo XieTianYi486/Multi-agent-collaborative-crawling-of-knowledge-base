@@ -65,6 +65,10 @@ async def lifespan(app: FastAPI):
     # 预置视频专区数据（仅在视频表为空时写入）
     _init_default_videos()
 
+    # 爬虫子库初始化：新机器/本地包可能没有 crawler/data（运行期数据），
+    # 启动时建表并同步站点档案，避免管理端「爬取中心」因缺表返回 500
+    _init_crawler_store()
+
     print(f"[启动] 服务就绪，监听 {settings.HOST}:{settings.PORT}")
     yield
     # 关闭时
@@ -341,3 +345,22 @@ def _init_default_videos():
         print(f"[启动] 视频预置数据初始化失败（不影响服务启动）: {exc}")
     finally:
         db.close()
+
+
+def _init_crawler_store():
+    """
+    初始化爬虫子库（独立 SQLite）：建表 + 同步 config/sites.yaml 站点档案。
+
+    交付包默认不包含 backend/crawler/data（爬取运行期数据），缺库时
+    「爬取中心」查询会因缺表报 500；此处幂等初始化，保证新环境页面可用。
+    """
+    try:
+        from crawler.store import repo
+        from crawler.store.db import init_db as init_crawler_db, session_scope
+
+        init_crawler_db()
+        with session_scope() as session:
+            repo.sync_sites(session)
+        print("[启动] 爬虫子库已就绪")
+    except Exception as exc:
+        print(f"[启动] 爬虫子库初始化失败（不影响主站问答）: {exc}")
