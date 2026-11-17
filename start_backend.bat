@@ -24,7 +24,7 @@ pip install -r requirements.txt -q 2>nul
 echo [2/2] Starting FastAPI on port 8001...
 echo.
 echo   API Docs: http://localhost:8001/docs
-echo   Account:  admin / admin123
+echo   Account:  见 backend\.env 的 ADMIN_USERNAME / ADMIN_PASSWORD（登录需验证码）
 echo   Press Ctrl+C to stop
 echo.
 

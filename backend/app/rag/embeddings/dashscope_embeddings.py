@@ -82,6 +82,8 @@ class TextEmbeddings:
             onnx_path, sess_options=sess_opts,
             providers=["CPUExecutionProvider"],
         )
+        # 不同导出的 ONNX 输入集合不同：有的必须传 token_type_ids，且要求 int64
+        self._input_names = {i.name for i in self._sess.get_inputs()}
         self._tok = AutoTokenizer.from_pretrained(model_dir)
         self._model_dir = model_dir
         print(f"[Embedding] provider=onnx_bge, model={self.model}, dim={self.dimension}")
@@ -100,10 +102,15 @@ class TextEmbeddings:
                 batch, padding=True, truncation=True,
                 max_length=MAX_LEN, return_tensors="np"
             )
-            outs = self._sess.run(None, {
-                "input_ids": enc["input_ids"],
-                "attention_mask": enc["attention_mask"],
-            })
+            feed = {
+                "input_ids": enc["input_ids"].astype(np.int64),
+                "attention_mask": enc["attention_mask"].astype(np.int64),
+            }
+            if "token_type_ids" in self._input_names:
+                feed["token_type_ids"] = enc.get(
+                    "token_type_ids", np.zeros_like(enc["input_ids"])
+                ).astype(np.int64)
+            outs = self._sess.run(None, feed)
             last_hidden = outs[0]  # (batch, seq_len, hidden)
             mask = enc["attention_mask"][..., None].astype(np.float32)
             pooled = np.sum(last_hidden * mask, axis=1) / np.maximum(np.sum(mask, axis=1), 1e-9)

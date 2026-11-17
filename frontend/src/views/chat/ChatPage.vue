@@ -90,7 +90,7 @@
                 <el-icon :size="28"><Service /></el-icon>
               </div>
               <h2>人工智能学院教学知识库</h2>
-              <p>基于多智能体协作爬取入库的嵌入式与物联网（ESP32、树莓派、电子电路）、软件工程与编程（Java、Python、Web 后端、数据库）官方文档与社区教程，为您精准检索技术资料，点击下方问题快速开始</p>
+              <p>基于多智能体协作爬取入库的嵌入式与物联网（ESP32、树莓派、电子电路）官方文档与社区教程，为您精准检索技术资料，点击下方问题快速开始</p>
             </div>
             <div class="preset-grid">
               <div
@@ -319,7 +319,7 @@ import { useRoute } from 'vue-router'
 import {
   Plus, ChatLineRound, Delete, Promotion,
   Service, UserFilled, VideoPause,
-  Cpu, Monitor, Connection, Tools, DataLine, MagicStick, Reading, DataBoard,
+  Cpu, Monitor, Connection, Tools, DataLine, MagicStick,
   Bell, Close, Headset, Menu,
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/store/chat'
@@ -416,24 +416,6 @@ const presetQuestions = [
       'ESP-IDF 如何配置工程？',
       '怎么用 PlatformIO 开发 ESP32？',
       '乐鑫最新发布版有哪些更新？',
-    ],
-  },
-  {
-    category: 'Python 与后端',
-    icon: DataBoard,
-    questions: [
-      'Python 基础语法从哪里开始学？',
-      'FastAPI 怎么定义一个接口？',
-      'Web 后端如何处理数据库连接？',
-    ],
-  },
-  {
-    category: 'Java 与数据结构',
-    icon: Reading,
-    questions: [
-      'Java 面向对象怎么理解？',
-      '集合框架有哪些常用容器？',
-      '数据结构中链表和数组怎么选？',
     ],
   },
   {

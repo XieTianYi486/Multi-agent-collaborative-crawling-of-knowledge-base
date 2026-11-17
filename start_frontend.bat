@@ -1,9 +1,9 @@
 @echo off
-title Labor-KB Frontend
+title 人工智能学院教学知识库 - Frontend
 cd /d "%~dp0frontend"
 
 echo ============================================
-echo   Labor Compliance KB - Frontend
+echo   人工智能学院教学知识库 - Frontend
 echo ============================================
 echo.
 

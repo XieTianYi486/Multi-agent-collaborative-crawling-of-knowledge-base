@@ -6,8 +6,8 @@
 - **项目类型**：多智能体协作爬取的专业知识库 + 向量检索问答（垂直 RAG）
 - **目标用户**：院校师生、知识库管理员、超级管理员
 - **部署方式**：私有化部署，支持完全内网运行
-- **数据存储**：SQLite（开发）/ MySQL（生产）+ ChromaDB 向量库（低版本 SQLite 自动降级 FAISS）+ 爬虫侧独立 SQLite
-- **知识域**：ESP32、树莓派、嵌入式开发、智能玩具等技术资料（多智能体流水线自动爬取入库，仅校内教学使用）
+- **数据存储**：SQLite 为主（MySQL 预留适配）+ 向量库 FAISS 后端（`VECTOR_BACKEND=faiss`，交付索引为 FAISS 格式；ChromaDB 为可选后端）+ 爬虫侧独立 SQLite
+- **知识域**：ESP32、树莓派、嵌入式开发等技术资料 + 大模型应用/AI Agent/软件工程方向（多智能体流水线自动爬取入库，仅校内教学使用）
 - **核心原则**：只做事实资料检索，不做大模型微调训练；LLM 仅用于资料处理（打标/审核/摘要），问答严格基于入库资料，杜绝 AI 幻觉
 
 ---
@@ -46,7 +46,7 @@
 - 系统配置热更新
 
 ### 6. 扩展功能
-- **AI 助手**：悬浮式智能助手，直接复用主教学知识库 RAG（与 /chat 同一检索链路），支持多轮会话、历史记录、引用来源展开与语音播报；由 `COUNSELOR_ENABLED` 控制启用
+- **AI 助手**：悬浮式智能助手（任务型 Agent + 主 RAG 双链路）：任务/个人数据/找资料类问题走工具链路（`app/agent/` 注册表 + 20+ 工具），普通概念问答复用主教学知识库 RAG（与 /chat 同一检索链路）；**写操作两阶段确认**（模型提议 → 用户确认卡 → 一次性令牌执行，令牌 DB 持久化防重放）；支持多轮会话、历史记录、引用来源展开与跳转、Edge TTS 语音播报；由 `COUNSELOR_ENABLED` 控制启用
 - **视频专区**：独立页面展示 B 站精选课程（ESP32 / ESP-IDF / Arduino / FreeRTOS / 树莓派 / 电子电路，以及软件工程方向的大模型部署 / AI 应用开发 / AI Agent），预置 24 个已校验视频；只存 BV 号等元数据，播放走 B 站官方 iframe，不转存视频；管理端支持增删改查、排序与上下架（播放量/封面为手动维护快照）
 - **开放 API**：`/openapi/v1` 命名空间，API Key（SHA-256 哈希存储）鉴权 + 调用方密级上限，供第三方系统对接检索/问答
 - **工单系统**：师生提交问题工单，管理员处理流转
@@ -116,13 +116,15 @@ Multi-agent collaborative crawling of knowledge base/
 ├── backend/
 │   ├── app/
 │   │   ├── api/              # API 路由层
-│   │   │   ├── v1/           # v1 版本接口
-│   │   │   │   ├── auth.py       # 认证接口
-│   │   │   │   ├── chat.py       # 问答接口
-│   │   │   │   ├── documents.py  # 文档管理接口
-│   │   │   │   ├── videos.py     # 视频专区 + 视频管理接口
-│   │   │   │   └── admin.py      # 管理接口
-│   │   │   └── deps.py          # 依赖注入（获取当前用户等）
+│   │   │   ├── v1/           # v1 版本接口（auth/chat/documents/videos/counselor/teaching/collection/tickets/crawler/admin）
+│   │   │   ├── open_api/     # 开放 API（API Key 鉴权）
+│   │   │   └── deps.py          # 依赖注入（获取当前用户/角色/API 调用方）
+│   │   ├── agent/            # AI 助手任务型 Agent
+│   │   │   ├── registry.py      # 工具注册表（角色过滤 + 参数校验 + 审计）
+│   │   │   ├── tools.py         # 20+ 工具实现（检索/补采/工单/通知/学情/运营）
+│   │   │   ├── actions.py       # 写操作确认令牌（DB 持久化、一次性消费、防重放）
+│   │   │   ├── agent.py         # 工具调用循环（写操作转确认卡）
+│   │   │   └── routing.py       # 意图门控（任务类问题才进工具链路）
 │   │   ├── core/             # 核心模块
 │   │   │   ├── config.py        # 配置管理（Pydantic Settings）
 │   │   │   ├── security.py      # JWT + 密码哈希
@@ -131,41 +133,44 @@ Multi-agent collaborative crawling of knowledge base/
 │   │   │   ├── user.py
 │   │   │   ├── document.py
 │   │   │   ├── video.py
-│   │   │   └── chat.py
+│   │   │   ├── chat.py
+│   │   │   └── agent_action.py  # 助手写操作确认令牌表
 │   │   ├── schemas/          # Pydantic 请求/响应模型
 │   │   ├── db/               # 数据库连接
-│   │   │   ├── sqlite.py        # SQLAlchemy 引擎 + Session
-│   │   │   ├── chroma_client.py # ChromaDB 客户端
+│   │   │   ├── sqlite.py        # SQLAlchemy 引擎 + Session（池化 + WAL + 索引）
+│   │   │   ├── chroma_client.py # 向量库客户端（ChromaDB / FAISS 双后端）
 │   │   │   └── cache.py         # 缓存管理
 │   │   ├── rag/              # RAG 核心引擎
 │   │   │   ├── chunker/         # 文档分块
 │   │   │   ├── embeddings/      # 向量嵌入（DashScope）
 │   │   │   ├── retrievers/      # 检索引擎（向量/BM25/混合）
 │   │   │   ├── query_processor/ # 查询预处理（改写/意图识别）
-│   │   │   ├── llm/             # LLM 调用封装
+│   │   │   ├── llm/             # LLM 调用封装（超时保护）
 │   │   │   ├── prompts/         # Prompt 模板
 │   │   │   ├── reranker/        # 重排序
 │   │   │   └── ingestion.py     # 文档入库流程
-│   │   └── main.py           # 应用入口
+│   │   └── main.py           # 应用入口（生产安全自检：弱密钥/弱口令/关验证码拒绝启动）
 │   ├── crawler/              # 多智能体爬取子系统（独立批处理包，与 app/ 解耦）
-│   │   ├── config/              # sites.yaml 站点档案 + models.yaml 模型档位 + prompts/
-│   │   ├── crawl/               # 采集层（adapters/ 适配器 + dedup 三层去重 + politeness 限速熔断）
+│   │   ├── config/              # sites.yaml 站点档案 + models.yaml 模型档位 + seeds.yaml 补采种子 + prompts/
+│   │   ├── crawl/               # 采集层（adapters/ 适配器 + dedup 三层去重 + politeness 限速熔断 + robots.txt 合规 + targeted 定向抓取）
 │   │   ├── process/             # HTML→Markdown / 归一化 / 元数据
 │   │   ├── store/               # 爬虫侧独立 SQLite（crawler/data/crawler.db，分库）
 │   │   ├── llm/                 # LLM Provider + 批量接口 + 成本账本 + 预算闸门
-│   │   ├── agents/              # DAG 编排器 + tagger/reviewer/summarizer 智能体
-│   │   ├── sync/ingest.py       # 入库同步器（爬虫文档 → KB 主库，复用 seed 范式）
-│   │   ├── pipeline.py          # 每日流水线 DAG：crawl→tagger→review→summarize→kb_sync
+│   │   ├── agents/              # DAG 编排器 + tagger/reviewer/summarizer/scout 智能体
+│   │   ├── sync/                # ingest.py 入库同步器 + resolve.py 补采需求自动闭环
+│   │   ├── lock.py              # 跨进程流水线互斥锁（3 小时过期自愈）
+│   │   ├── pipeline.py          # 每日流水线 DAG：crawl→discover→targeted→tagger→review→summarize→kb_sync→resolve
 │   │   └── data/                # crawler.db + md/ raw/ 落盘文件
 │   ├── data/                 # SQLite 数据文件
 │   ├── cache/                # 磁盘缓存
 │   ├── uploads/              # 上传的文档文件
-│   ├── eval/                 # 评测集与实验（74 道 QA + run_eval.py，论文第 6 章）
-│   ├── tests/                # 单元测试（爬虫/敏感词/OCR/拒答一致性/评测集校验）
+│   ├── eval/                 # 评测集与实验（103 道 QA + run_eval.py，论文第 6 章）
+│   ├── tests/                # 单元测试（153 用例：爬虫/Agent/令牌/robots/敏感词/OCR/拒答一致性/评测集校验）
 │   ├── requirements.txt
 │   ├── run_crawl_daily.py    # 每日爬取流水线入口（Windows 任务计划调用）
 │   ├── register_crawl_task.bat # 注册每日爬取任务计划
-│   └── rebuild_indexes.py    # FAISS+BM25 索引重建（修复用）
+│   ├── rebuild_indexes.py    # FAISS+BM25 索引全量重建
+│   └── fix_vector_index.py   # 向量索引一致性修复（零批量成本：删幽灵/补缺失/恢复 source_url）
 ├── frontend/
 │   ├── src/
 │   │   ├── api/              # API 调用封装
@@ -173,13 +178,15 @@ Multi-agent collaborative crawling of knowledge base/
 │   │   │   ├── auth.ts
 │   │   │   ├── chat.ts
 │   │   │   ├── video.ts
+│   │   │   ├── counselor.ts     # AI 助手 SSE 流式（含工具事件/确认卡）
 │   │   │   └── session.ts
 │   │   ├── views/            # 页面组件
 │   │   │   ├── auth/            # 登录/注册/个人中心
 │   │   │   ├── chat/            # 对话问答界面
 │   │   │   ├── videos/          # 视频专区（B 站精选）
-│   │   │   └── admin/           # 管理后台页面（含视频管理）
-│   │   ├── components/       # 公共组件
+│   │   │   ├── help/            # 使用帮助页（公开，按角色说明功能入口）
+│   │   │   └── admin/           # 管理后台页面（含视频管理/知识审核/补采闭环）
+│   │   ├── components/       # 公共组件（counselor/ 悬浮 AI 助手 + AssistantMascot 形象）
 │   │   ├── store/            # Pinia 状态管理
 │   │   ├── router/           # Vue Router 路由配置
 │   │   ├── styles/           # 全局样式
@@ -187,6 +194,7 @@ Multi-agent collaborative crawling of knowledge base/
 │   │   └── main.ts
 │   ├── package.json
 │   └── vite.config.ts
+├── deploy/                   # 部署脚本（deploy.sh 首装 / update.ps1+update.sh 增量更新 / sync_content+sync_students 数据同步 / materials 配套资料）
 ├── .claude/                  # Claude Code 配置
 │   ├── agents/               # 子代理定义
 │   ├── commands/             # 自定义斜杠命令
@@ -203,16 +211,18 @@ Multi-agent collaborative crawling of knowledge base/
 
 ### 环境准备
 - Python 3.9+（开发环境实测 3.9.1）
-- Node.js 18+
+- Node.js 20.19+（Vite 8 要求；22.12+ 亦可）
 - 阿里云百炼 API Key（DashScope）
 
 ### 后端
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env    # 编辑 .env 填入 API Key
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+cp .env.example .env    # 编辑 .env 填入 API Key，并修改 ADMIN_PASSWORD / JWT_SECRET_KEY
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001    # 本机勿用 --reload（Windows 下残留孤儿 worker 占端口）
 ```
+
+> 生产安全自检：弱 JWT 密钥/弱管理员口令/关闭验证码会拒绝启动；仅本地调试可设 `SKIP_SAFETY_CHECK=true`（部署脚本会强制写回 false）。
 
 ### 前端
 ```bash
@@ -231,6 +241,23 @@ start_all.bat
 cd backend
 python -m pytest -v
 ```
+
+---
+
+## 🚀 生产部署（deploy/）
+
+| 脚本 | 用途 |
+|------|------|
+| `deploy/deploy.sh` | Ubuntu 22.04 首装：依赖/解压/kb 用户/随机管理员密码+强制验证码+`VECTOR_BACKEND=faiss`/venv/systemd/Nginx/健康检查 |
+| `deploy/update.ps1` + `deploy/update.sh` | 增量更新：本地构建 dist → 打包上传 → 服务端整体替换前端资源 + 重启（发布标记校验） |
+| `deploy/sync_content.py` | 幂等补录视频与配套资料（`deploy/materials/`） |
+| `deploy/sync_students.py` | 学生名单导入（按角色 code 解析，幂等；读取 `deploy/students.json`） |
+
+要点：
+- 部署包不含 `.env`/数据库/学生名单；API Key 在服务器单独配置
+- `deploy.sh` 会轮换库内弱口令管理员并把新密码打印在日志末尾
+- 前端由 Nginx 托管 `frontend/dist`，`/api/` 与 `/static/` 反代到 8001
+- 后端单 worker；进程内限流单实例全局生效，多实例需换共享存储
 
 ---
 
@@ -285,10 +312,13 @@ register_crawl_task.bat                  # 注册 Windows 任务计划（每日 
 |--------|--------|------|
 | 后端端口 | 8001 | FastAPI 服务端口 |
 | 前端端口 | 5173 | Vite 开发服务器 |
+| VECTOR_BACKEND | auto（部署固定 faiss） | 交付索引为 FAISS 格式；Linux 上 auto 会改选 ChromaDB 导致检索为空 |
 | 向量维度 | 1536 | DashScope text-embedding-v2 |
 | 分块大小 | 512 token | 语义分块 |
 | 召回 Top-K | 向量/BM25 各 20 → 融合 50 → 重排 5 | 混合检索三级漏斗 |
 | JWT 过期 | 24h | Token 有效期 |
+| SKIP_SAFETY_CHECK | false | 生产安全自检豁免开关，仅限本地调试 |
+| LLM 超时 | 读 120s / 连 10s / 重试 1 次 | 防止挂起调用占死同步线程池 |
 
 ---
 
@@ -320,8 +350,18 @@ register_crawl_task.bat                  # 注册 Windows 任务计划（每日 
 | POST | /api/v1/crawler/run | 手动触发爬取流水线（后台线程） |
 | GET | /api/v1/crawler/run | 流水线运行状态 |
 | POST | /api/v1/counselor/ask | AI 助手问答（同步） |
-| POST | /api/v1/counselor/stream | AI 助手问答（SSE 流式） |
+| POST | /api/v1/counselor/stream | AI 助手问答（SSE：token/tool_call/tool_result/confirmation_required/done） |
+| POST | /api/v1/counselor/actions/confirm | 确认执行助手提议的写操作（一次性令牌，DB 持久化防重放） |
 | GET | /api/v1/counselor/sessions | AI 助手会话列表 |
-| POST | /openapi/v1/search | 开放 API 知识片段检索（API Key 鉴权） |
-| POST | /openapi/v1/ask | 开放 API 知识库问答（API Key 鉴权） |
+| GET | /api/v1/counselor/tts | Edge TTS 语音合成（免费，限流） |
+| GET | /api/v1/teaching/my-classes | 教师：我的班级 |
+| GET | /api/v1/teaching/my-classes/{id}/students | 教师：班级学生学情（仅任教班级） |
+| GET/POST | /api/v1/collection/requests | 补采需求查询/提交 |
+| POST | /api/v1/collection/requests/{id}/run | 触发定向补采流水线（管理员） |
+| GET/POST | /api/v1/tickets | 工单查询/提交 |
+| GET | /api/v1/notifications | 站内通知 |
+| GET/POST | /api/v1/admin/sensitive-words | 敏感词管理（超级管理员） |
+| GET/POST | /api/v1/api-clients | 开放 API 调用方管理（超级管理员） |
+| POST | /openapi/v1/search | 开放 API 知识片段检索（API Key Bearer 鉴权） |
+| POST | /openapi/v1/ask | 开放 API 知识库问答（API Key Bearer 鉴权） |
 | GET | /api/health | 健康检查 |

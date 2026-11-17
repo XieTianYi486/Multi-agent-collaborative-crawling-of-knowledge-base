@@ -153,9 +153,6 @@
         <button class="footer-btn" @click="themeStore.toggle()" title="切换主题">
           <el-icon :size="18"><component :is="themeStore.isDark ? Sunny : Moon" /></el-icon>
         </button>
-        <router-link to="/help" class="footer-btn" title="使用帮助">
-          <el-icon :size="18"><QuestionFilled /></el-icon>
-        </router-link>
         <button v-if="!isCollapse" class="footer-btn logout-btn" @click="authStore.logout()" title="退出登录">
           <el-icon :size="18"><SwitchButton /></el-icon>
           <span class="nav-label">退出</span>
@@ -225,7 +222,7 @@ import {
   Expand, Fold, Sunny, Moon, Reading, SwitchButton,
   ChatDotRound, Document, User, List, DataAnalysis, UserFilled, Avatar,
   FolderOpened, OfficeBuilding, Bell, Tickets, Stamp, Lock, Download, Refresh,
-  Service, VideoCamera, QuestionFilled,
+  Service, VideoCamera,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
