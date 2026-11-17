@@ -89,3 +89,6 @@ vite_out.txt
 /.tmp_diag/
 /package.json
 /package-lock.json
+
+# 索引/向量备份文件（本地诊断修复工具生成，不入库）
+*.bak_*
