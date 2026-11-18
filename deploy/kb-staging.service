@@ -1,0 +1,24 @@
+# ============================================================
+# staging 后端服务模板
+# 用法：
+#   sudo cp deploy/kb-staging.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now kb-staging
+# ============================================================
+[Unit]
+Description=AI KB Staging Backend (maker studio preview)
+After=network.target
+
+[Service]
+User=kb-staging
+Group=kb-staging
+WorkingDirectory=/opt/kb-staging/backend
+Environment="PATH=/opt/kb-staging/backend/.venv/bin"
+ExecStart=/opt/kb-staging/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8002 --workers 1
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/kb-staging/backend/logs/uvicorn.log
+StandardError=append:/opt/kb-staging/backend/logs/uvicorn.err.log
+
+[Install]
+WantedBy=multi-user.target
